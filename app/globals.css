@@ -1,0 +1,862 @@
+/* ==========================================================================
+   Wash Zone — cinematic scroll experience
+   Theme: #104b87. The frame sequence is the primary visual element; every
+   other surface is deliberately quiet.
+   ========================================================================== */
+
+:root {
+  --blue-900: #07294a;
+  --blue-800: #0a3765;
+  --blue-700: #104b87;   /* base theme colour */
+  --blue-600: #165b9e;
+  --blue-400: #447fb2;   /* the background colour inside the frames */
+  --ink: #ffffff;
+  --ink-soft: rgba(255, 255, 255, 0.72);
+  --ink-faint: rgba(255, 255, 255, 0.5);
+  --accent: #8fd0f5;
+
+  /* Length of the scroll runway: 239 frames across ~9.5 screens of scrolling.
+     This is the master speed control — longer runway, slower playback, since
+     the whole sequence is mapped across it. Raised from 750vh: the middle of
+     the film was running away from the viewer. */
+  --runway: 950vh;
+  --gutter: clamp(1.25rem, 5vw, 5rem);
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  /* Lenis owns smooth scrolling; native smooth scrolling would fight it. */
+  scroll-behavior: auto;
+  background-color: var(--blue-700);
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  background-color: var(--blue-700);
+  color: var(--ink);
+  font-family: var(--font-jakarta), system-ui, -apple-system, "Segoe UI", sans-serif;
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* --------------------------------------------------------------------------
+   Ambient background — the #104b87 world the film floats in
+   -------------------------------------------------------------------------- */
+
+.ambient {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+  background-color: var(--blue-700);
+}
+
+.ambient__base {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(
+    ellipse 120% 90% at 50% 12%,
+    var(--blue-600) 0%,
+    var(--blue-700) 45%,
+    var(--blue-900) 100%
+  );
+}
+
+.ambient__glow {
+  position: absolute;
+  border-radius: 50%;
+  will-change: transform;
+}
+
+.ambient__glow--one {
+  top: 6%;
+  left: -6%;
+  width: min(60vw, 620px);
+  height: min(60vw, 620px);
+  background: radial-gradient(circle, rgba(143, 208, 245, 0.3) 0%, rgba(16, 75, 135, 0) 70%);
+  filter: blur(70px);
+}
+
+.ambient__glow--two {
+  right: -8%;
+  bottom: 4%;
+  width: min(68vw, 700px);
+  height: min(68vw, 700px);
+  background: radial-gradient(circle, rgba(68, 127, 178, 0.42) 0%, rgba(10, 55, 101, 0) 70%);
+  filter: blur(80px);
+}
+
+.ambient__glow--three {
+  top: 34%;
+  left: 30%;
+  width: min(50vw, 480px);
+  height: min(50vw, 480px);
+  background: radial-gradient(circle, rgba(96, 165, 250, 0.22) 0%, rgba(16, 75, 135, 0) 70%);
+  filter: blur(60px);
+}
+
+.ambient__bubble {
+  position: absolute;
+  bottom: 0;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle at 34% 32%,
+    rgba(255, 255, 255, 0.55),
+    rgba(255, 255, 255, 0.08) 58%,
+    rgba(143, 208, 245, 0.16) 100%
+  );
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  will-change: transform;
+}
+
+/* --------------------------------------------------------------------------
+   Stage — the scroll runway and its pinned viewport
+   -------------------------------------------------------------------------- */
+
+.stage {
+  position: relative;
+  z-index: 1;
+  height: var(--runway);
+}
+
+.stage__pin {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  height: 100svh;
+  overflow: hidden;
+}
+
+.stage__canvas {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  transition: opacity 1s ease-out;
+
+  /* Feather the edges so the film sits inside the ambient blue instead of
+     ending on a hard rectangle. The subject stays well inside the clear area. */
+  -webkit-mask-image: radial-gradient(
+    ellipse 104% 104% at 50% 50%,
+    #000 66%,
+    rgba(0, 0, 0, 0) 100%
+  );
+  mask-image: radial-gradient(
+    ellipse 104% 104% at 50% 50%,
+    #000 66%,
+    rgba(0, 0, 0, 0) 100%
+  );
+}
+
+.stage.is-ready .stage__canvas {
+  opacity: 1;
+}
+
+/* Keeps white type legible over the lighter blue of the frames, without
+   touching the centre of the picture. */
+.stage__scrim {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(to right, rgba(7, 41, 74, 0.68) 0%, rgba(7, 41, 74, 0) 34%),
+    linear-gradient(to left, rgba(7, 41, 74, 0.68) 0%, rgba(7, 41, 74, 0) 34%),
+    linear-gradient(to bottom, rgba(7, 41, 74, 0.45) 0%, rgba(7, 41, 74, 0) 22%);
+}
+
+/* --------------------------------------------------------------------------
+   Loading state
+   -------------------------------------------------------------------------- */
+
+.loader {
+  position: absolute;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1.25rem;
+  background: radial-gradient(
+    ellipse at center,
+    var(--blue-600) 0%,
+    var(--blue-700) 55%,
+    var(--blue-900) 100%
+  );
+}
+
+.loader__mark {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.42em;
+  color: var(--ink-soft);
+}
+
+.loader__track {
+  width: min(220px, 50vw);
+  height: 2px;
+  background: rgba(255, 255, 255, 0.16);
+  overflow: hidden;
+}
+
+.loader__fill {
+  height: 100%;
+  width: 100%;
+  background: var(--ink);
+  transform-origin: left center;
+  transform: scaleX(0);
+  transition: transform 0.3s ease-out;
+}
+
+.loader__text {
+  font-size: 0.68rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+/* --------------------------------------------------------------------------
+   Floating navigation
+   -------------------------------------------------------------------------- */
+
+.nav {
+  position: absolute;
+  top: clamp(1rem, 2.5vh, 1.75rem);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  gap: clamp(0.75rem, 2vw, 1.75rem);
+  padding: 0.5rem 0.55rem 0.5rem 1.1rem;
+  width: max-content;
+  max-width: calc(100vw - 2 * var(--gutter));
+
+  background: rgba(10, 55, 101, 0.3);
+  backdrop-filter: blur(16px) saturate(140%);
+  -webkit-backdrop-filter: blur(16px) saturate(140%);
+  border: 0;
+  border-radius: 999px;
+  box-shadow: 0 8px 32px rgba(7, 41, 74, 0.28);
+}
+
+.nav__brand {
+  font-family: var(--font-outfit), system-ui, sans-serif;
+  font-size: 0.88rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.nav__brand span {
+  color: var(--accent);
+  margin-left: 0.28em;
+}
+
+.nav__links {
+  display: flex;
+  align-items: center;
+  gap: 0.15rem;
+}
+
+.nav__link {
+  position: relative;
+  appearance: none;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  padding: 0.45rem clamp(0.5rem, 1.4vw, 0.95rem);
+  border-radius: 999px;
+  font-family: var(--font-outfit), system-ui, sans-serif;
+  font-size: 0.78rem;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  color: var(--ink-faint);
+  white-space: nowrap;
+  transition: color 0.35s ease, background-color 0.35s ease;
+}
+
+.nav__active-pill {
+  position: absolute;
+  inset: 0;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.16);
+  z-index: -1;
+}
+
+.nav__link:hover {
+  color: var(--ink);
+}
+
+.nav__link.is-active {
+  color: var(--ink);
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.nav__link:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* --------------------------------------------------------------------------
+   Story beats — text held to the left and right, picture kept clear
+   -------------------------------------------------------------------------- */
+
+.story {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  pointer-events: none;
+}
+
+/*
+  Fail-safe. AOS parks every [data-aos] block at opacity 0 and relies on a
+  scripted class to bring it back, so any hitch there would leave the site with
+  no readable copy at all. Until the story layer is armed, AOS's start states
+  are neutralised and the text simply renders.
+*/
+.story:not(.is-armed) [data-aos] {
+  opacity: 1;
+  transform: none;
+  transition: none;
+}
+
+.beat {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr);
+  align-items: center;
+  column-gap: 6vw;
+  padding: 0 var(--gutter);
+  will-change: opacity, transform, filter;
+}
+
+.beat__col {
+  /* Wide enough that the longest headline line sets without re-wrapping,
+     narrow enough to leave the centre of frame clear. */
+  max-width: 29rem;
+}
+
+.beat__col--left {
+  justify-self: start;
+}
+
+.beat__col--right {
+  justify-self: end;
+  /* Kept narrow so it hugs the right edge and stays clear of the subject,
+     who sits centre-to-centre-right through most of the sequence. */
+  max-width: 16.5rem;
+  text-align: right;
+  /* Offset from the left column so the two blocks read as a pair, not a row. */
+  transform: translateY(14%);
+}
+
+.beat__eyebrow {
+  margin: 0 0 1rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.34em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+.beat__heading {
+  margin: 0 0 1.25rem;
+  font-size: clamp(2rem, 4.3vw, 3.6rem);
+  font-weight: 600;
+  line-height: 1.04;
+  letter-spacing: -0.035em;
+  white-space: pre-line;
+  text-shadow: 0 2px 30px rgba(7, 41, 74, 0.55);
+}
+
+.beat__body {
+  margin: 0;
+  max-width: 22rem;
+  font-size: clamp(0.92rem, 1.15vw, 1.05rem);
+  line-height: 1.65;
+  color: var(--ink-soft);
+  text-shadow: 0 1px 16px rgba(7, 41, 74, 0.5);
+}
+
+.beat__label {
+  margin: 0 0 0.75rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: var(--ink);
+}
+
+.beat__detail {
+  margin: 0 0 1.75rem;
+  font-size: 0.9rem;
+  line-height: 1.7;
+  color: var(--ink-soft);
+  text-shadow: 0 1px 16px rgba(7, 41, 74, 0.5);
+}
+
+.beat__stat {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.3rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.22);
+}
+
+.beat__stat-value {
+  font-size: clamp(1.6rem, 2.6vw, 2.3rem);
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  line-height: 1;
+}
+
+.beat__stat-caption {
+  font-size: 0.68rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+.beat__cta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 1.1rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.22);
+}
+
+.beat__button {
+  pointer-events: auto;
+  display: inline-block;
+  padding: 0.85rem 1.6rem;
+  border-radius: 999px;
+  background: var(--ink);
+  color: var(--blue-800);
+  font-size: 0.82rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-decoration: none;
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.beat__button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 30px rgba(7, 41, 74, 0.4);
+}
+
+.beat__contact {
+  margin: 0;
+  font-size: 0.75rem;
+  line-height: 1.8;
+  letter-spacing: 0.06em;
+  color: var(--ink-faint);
+}
+
+/* --------------------------------------------------------------------------
+   Floating WhatsApp button
+   -------------------------------------------------------------------------- */
+
+.wa {
+  position: absolute;
+  right: var(--gutter);
+  bottom: clamp(1.25rem, 3.5vh, 2.25rem);
+  z-index: 35;
+
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  text-decoration: none;
+  /* The story layer above is pointer-events: none, so this has to opt back in. */
+  pointer-events: auto;
+}
+
+.wa__badge {
+  display: grid;
+  place-items: center;
+  width: 3.25rem;
+  height: 3.25rem;
+  border-radius: 50%;
+  color: var(--ink);
+
+  background: rgba(10, 55, 101, 0.34);
+  backdrop-filter: blur(16px) saturate(140%);
+  -webkit-backdrop-filter: blur(16px) saturate(140%);
+  box-shadow: 0 8px 28px rgba(7, 41, 74, 0.34);
+  transition: transform 0.35s ease, background-color 0.35s ease;
+}
+
+.wa__label {
+  padding: 0.5rem 0.9rem;
+  border-radius: 999px;
+  font-size: 0.74rem;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  color: var(--ink);
+
+  background: rgba(10, 55, 101, 0.34);
+  backdrop-filter: blur(16px) saturate(140%);
+  -webkit-backdrop-filter: blur(16px) saturate(140%);
+  box-shadow: 0 8px 28px rgba(7, 41, 74, 0.28);
+
+  /* Stays out of the way until asked for. */
+  opacity: 0;
+  transform: translateX(0.5rem);
+  transition: opacity 0.35s ease, transform 0.35s ease;
+}
+
+.wa:hover .wa__label,
+.wa:focus-visible .wa__label {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+.wa:hover .wa__badge,
+.wa:focus-visible .wa__badge {
+  transform: translateY(-2px);
+  background: rgba(37, 211, 102, 0.9); /* WhatsApp green, only on intent */
+}
+
+.wa:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 6px;
+  border-radius: 999px;
+}
+
+/* --------------------------------------------------------------------------
+   Responsive — keep the centre of frame clear on narrow screens
+   -------------------------------------------------------------------------- */
+
+@media (max-width: 900px) {
+  :root {
+    /* Shorter than desktop in absolute terms, because a phone viewport is
+       taller relative to its width and a flick covers more of the runway. */
+    --runway: 820vh;
+  }
+
+  .beat {
+    grid-template-columns: 1fr;
+    align-content: space-between;
+    align-items: stretch;
+    padding: clamp(5rem, 12vh, 6.5rem) var(--gutter) clamp(5.25rem, 10.5vh, 6.5rem);
+  }
+
+  .beat__col {
+    max-width: 26rem;
+  }
+
+  .beat__col--right {
+    justify-self: stretch;
+    max-width: 26rem;
+    text-align: left;
+    transform: none;
+  }
+
+  .beat__heading {
+    font-size: clamp(1.6rem, 6.4vw, 2.2rem);
+    margin-bottom: 0.9rem;
+  }
+
+  .beat__eyebrow {
+    margin-bottom: 0.7rem;
+  }
+
+  .beat__body {
+    font-size: 0.88rem;
+    line-height: 1.6;
+  }
+
+  .beat__detail {
+    margin-bottom: 1rem;
+    font-size: 0.82rem;
+  }
+
+  .beat__stat {
+    padding-top: 0.9rem;
+  }
+
+  .beat__stat-value {
+    font-size: 1.5rem;
+  }
+
+  .beat__cta {
+    padding-top: 0.9rem;
+    gap: 0.8rem;
+  }
+
+  .beat__stat,
+  .beat__cta {
+    align-items: flex-start;
+  }
+
+  .stage__scrim {
+    background:
+      linear-gradient(to bottom, rgba(7, 41, 74, 0.72) 0%, rgba(7, 41, 74, 0) 34%),
+      linear-gradient(to top, rgba(7, 41, 74, 0.72) 0%, rgba(7, 41, 74, 0) 36%);
+  }
+}
+
+@media (max-width: 560px) {
+  .wa__badge {
+    width: 2.9rem;
+    height: 2.9rem;
+  }
+
+  /* No hover on touch, so the label would never show — drop it entirely. */
+  .wa__label {
+    display: none;
+  }
+
+  .nav {
+    left: var(--gutter);
+    right: var(--gutter);
+    transform: none;
+    width: auto;
+    max-width: none;
+    justify-content: center;
+    padding: 0.35rem 0.4rem;
+  }
+
+  /* The five chapters are the navigation on a phone; the wordmark is already
+     on screen in the film itself, so it gives up its space rather than
+     pushing "Contact" off the edge. */
+  .nav__brand {
+    display: none;
+  }
+
+  .nav__links {
+    width: 100%;
+    justify-content: space-between;
+    gap: 0;
+  }
+
+  .nav__link {
+    padding: 0.4rem 0.3rem;
+    font-size: 0.68rem;
+    letter-spacing: 0;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   Reduced motion — hold the story still, keep it readable
+   -------------------------------------------------------------------------- */
+
+@media (prefers-reduced-motion: reduce) {
+  .beat {
+    filter: none !important;
+  }
+
+  [data-aos] {
+    opacity: 1 !important;
+    transform: none !important;
+    transition: none !important;
+  }
+
+  .stage__canvas,
+  .loader__fill,
+  .beat__button,
+  .wa__badge,
+  .wa__label {
+    transition: none;
+  }
+
+  .wa:hover .wa__badge,
+  .wa:focus-visible .wa__badge {
+    transform: none;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   Scrollbar
+   -------------------------------------------------------------------------- */
+
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--blue-900);
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.22);
+  border-radius: 999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.4);
+}
+
+/* --------------------------------------------------------------------------
+   Scene text — the cinematic caption layer over the canvas
+
+   Placement is driven by config/scenes.ts, which picks the third of the frame
+   with the flattest measured luma. The modifiers below only turn that choice
+   into a box; they carry no opinion about which scene goes where.
+
+   Every animated property is set inline by SceneText.tsx (transform, opacity
+   and one filter on the block). Nothing here transitions, because the motion
+   is scroll-driven — a CSS transition would fight the scrub and lag the words
+   behind the frames.
+   -------------------------------------------------------------------------- */
+
+.sceneLayer {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  pointer-events: none;
+}
+
+.scene {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  pointer-events: none;
+  /* Clear of the navbar at the top and the WhatsApp button at the bottom. */
+  padding: clamp(5.5rem, 14vh, 8rem) var(--gutter) clamp(5rem, 12vh, 7rem);
+}
+
+.scene--left { justify-content: flex-start; }
+.scene--center { justify-content: center; }
+.scene--right { justify-content: flex-end; }
+
+.scene--top { align-items: flex-start; }
+.scene--middle { align-items: center; }
+.scene--bottom { align-items: flex-end; }
+
+.scene__inner {
+  /* A measure narrow enough to stay inside the scrimmed third of the frame. */
+  max-width: min(34ch, 38vw);
+}
+
+.scene--centered .scene__inner {
+  max-width: min(46ch, 64vw);
+  text-align: center;
+}
+
+.scene__label {
+  margin: 0 0 clamp(0.7rem, 1.6vh, 1.1rem);
+  font-family: var(--font-outfit), system-ui, sans-serif;
+  font-size: clamp(0.66rem, 0.78vw, 0.76rem);
+  font-weight: 600;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+.scene__headline {
+  margin: 0;
+  font-family: var(--font-outfit), system-ui, sans-serif;
+  font-size: clamp(2.2rem, 5.5vw, 4.6rem);
+  font-weight: 700;
+  line-height: 1.03;
+  letter-spacing: -0.025em;
+  text-wrap: balance;
+  text-shadow: 0 1px 28px rgba(7, 41, 74, 0.5);
+}
+
+.scene__line {
+  display: block;
+}
+
+/* inline-block is what makes the per-word transform possible at all. */
+.scene__word {
+  display: inline-block;
+  /* Set by SceneText on every tick; these are only the pre-paint defaults. */
+  opacity: 0;
+  transform: translate3d(0, 40px, 0);
+  backface-visibility: hidden;
+}
+
+.scene__desc {
+  margin: clamp(0.9rem, 2.2vh, 1.4rem) 0 0;
+  max-width: 34ch;
+  font-size: clamp(0.94rem, 1.15vw, 1.1rem);
+  line-height: 1.55;
+  color: var(--ink-soft);
+  text-shadow: 0 1px 18px rgba(7, 41, 74, 0.45);
+}
+
+.scene--centered .scene__desc {
+  margin-inline: auto;
+}
+
+/* Dark type, for a frame whose flattest region is bright. None of the current
+   ten scenes use this: the side and top scrims darken every edge, so light
+   type is correct throughout. Kept because the next clip may not be so blue. */
+.scene--dark .scene__label {
+  color: rgba(7, 41, 74, 0.6);
+}
+
+.scene--dark .scene__headline,
+.scene--dark .scene__desc {
+  color: var(--blue-900);
+  text-shadow: 0 1px 22px rgba(255, 255, 255, 0.5);
+}
+
+@media (max-width: 900px) {
+  /* One column on a phone. Side placement would leave a measure too narrow to
+     read, and the frame is cover-fitted so its edges are cropped anyway —
+     the subject sits closer to the middle than it does on desktop. */
+  .scene {
+    padding: clamp(4.75rem, 12vh, 6rem) var(--gutter) clamp(6.5rem, 15vh, 8rem);
+    align-items: flex-end;
+    justify-content: flex-start;
+  }
+
+  .scene__inner,
+  .scene--centered .scene__inner {
+    max-width: none;
+    text-align: left;
+  }
+
+  .scene--centered .scene__desc {
+    margin-inline: 0;
+  }
+
+  .scene__headline {
+    font-size: clamp(1.9rem, 8.5vw, 2.8rem);
+  }
+
+  .scene__desc {
+    max-width: 42ch;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* SceneText already stops the travel; this covers the pre-paint state so a
+     word is never left parked 40px low. */
+  .scene__word {
+    transform: none;
+  }
+}
