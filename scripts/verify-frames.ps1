@@ -17,8 +17,8 @@
 #   .\scripts\verify-frames.ps1 -ExpectLossless
 
 param(
-    [string]$InputVideo = "public/video/new video.mp4",
-    [string]$FramesDir = "public/frames",
+    [string]$InputVideo = "public/video/IMG_2305.MOV",
+    [string]$FramesDir = "public/frames/v2",
     [ValidateRange(3, 8)]
     [int]$Pad = 5,
     # Frames dropped from the front of the video at extraction. Must match

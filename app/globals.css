@@ -7,20 +7,23 @@
 :root {
   --blue-900: #07294a;
   --blue-800: #0a3765;
-  --blue-700: #104b87;   /* base theme colour */
+  --blue-700: #104b87;
+  /* base theme colour */
   --blue-600: #165b9e;
-  --blue-400: #447fb2;   /* the background colour inside the frames */
+  --blue-400: #447fb2;
+  /* the background colour inside the frames */
   --ink: #ffffff;
   --ink-soft: rgba(255, 255, 255, 0.72);
-  --ink-faint: rgba(255, 255, 255, 0.5);
+  /* 0.62, not 0.5: at 0.5 the small uppercase labels this is used for came out
+     around 3.4:1 on the base blue, which fails AA for text that size. */
+  --ink-faint: rgba(255, 255, 255, 0.62);
   --accent: #8fd0f5;
 
-  /* Length of the scroll runway: 239 frames across ~9.5 screens of scrolling.
-     This is the master speed control — longer runway, slower playback, since
-     the whole sequence is mapped across it. Raised from 750vh: the middle of
-     the film was running away from the viewer. */
-  --runway: 950vh;
-  --gutter: clamp(1.25rem, 5vw, 5rem);
+  /* There is no global runway any more. The homepage is five chapters, and each
+     one sets its own height from its frame count in `config/chapters.ts` — see
+     `runwayFor` there, which is the single place the film's scrub speed is
+     tuned. */
+  --gutter: 5rem;
 }
 
 *,
@@ -75,12 +78,10 @@ body {
 .ambient__base {
   position: absolute;
   inset: 0;
-  background: radial-gradient(
-    ellipse 120% 90% at 50% 12%,
-    var(--blue-600) 0%,
-    var(--blue-700) 45%,
-    var(--blue-900) 100%
-  );
+  background: radial-gradient(ellipse 120% 90% at 50% 12%,
+      var(--blue-600) 0%,
+      var(--blue-700) 45%,
+      var(--blue-900) 100%);
 }
 
 .ambient__glow {
@@ -120,71 +121,12 @@ body {
   position: absolute;
   bottom: 0;
   border-radius: 50%;
-  background: radial-gradient(
-    circle at 34% 32%,
-    rgba(255, 255, 255, 0.55),
-    rgba(255, 255, 255, 0.08) 58%,
-    rgba(143, 208, 245, 0.16) 100%
-  );
+  background: radial-gradient(circle at 34% 32%,
+      rgba(255, 255, 255, 0.55),
+      rgba(255, 255, 255, 0.08) 58%,
+      rgba(143, 208, 245, 0.16) 100%);
   border: 1px solid rgba(255, 255, 255, 0.2);
   will-change: transform;
-}
-
-/* --------------------------------------------------------------------------
-   Stage — the scroll runway and its pinned viewport
-   -------------------------------------------------------------------------- */
-
-.stage {
-  position: relative;
-  z-index: 1;
-  height: var(--runway);
-}
-
-.stage__pin {
-  position: sticky;
-  top: 0;
-  height: 100vh;
-  height: 100svh;
-  overflow: hidden;
-}
-
-.stage__canvas {
-  position: absolute;
-  inset: 0;
-  display: block;
-  width: 100%;
-  height: 100%;
-  opacity: 0;
-  transition: opacity 1s ease-out;
-
-  /* Feather the edges so the film sits inside the ambient blue instead of
-     ending on a hard rectangle. The subject stays well inside the clear area. */
-  -webkit-mask-image: radial-gradient(
-    ellipse 104% 104% at 50% 50%,
-    #000 66%,
-    rgba(0, 0, 0, 0) 100%
-  );
-  mask-image: radial-gradient(
-    ellipse 104% 104% at 50% 50%,
-    #000 66%,
-    rgba(0, 0, 0, 0) 100%
-  );
-}
-
-.stage.is-ready .stage__canvas {
-  opacity: 1;
-}
-
-/* Keeps white type legible over the lighter blue of the frames, without
-   touching the centre of the picture. */
-.stage__scrim {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  background:
-    linear-gradient(to right, rgba(7, 41, 74, 0.68) 0%, rgba(7, 41, 74, 0) 34%),
-    linear-gradient(to left, rgba(7, 41, 74, 0.68) 0%, rgba(7, 41, 74, 0) 34%),
-    linear-gradient(to bottom, rgba(7, 41, 74, 0.45) 0%, rgba(7, 41, 74, 0) 22%);
 }
 
 /* --------------------------------------------------------------------------
@@ -200,12 +142,10 @@ body {
   align-items: center;
   justify-content: center;
   gap: 1.25rem;
-  background: radial-gradient(
-    ellipse at center,
-    var(--blue-600) 0%,
-    var(--blue-700) 55%,
-    var(--blue-900) 100%
-  );
+  background: radial-gradient(ellipse at center,
+      var(--blue-600) 0%,
+      var(--blue-700) 55%,
+      var(--blue-900) 100%);
 }
 
 .loader__mark {
@@ -239,265 +179,25 @@ body {
 }
 
 /* --------------------------------------------------------------------------
-   Floating navigation
-   -------------------------------------------------------------------------- */
-
-.nav {
-  position: absolute;
-  top: clamp(1rem, 2.5vh, 1.75rem);
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 40;
-  display: flex;
-  align-items: center;
-  gap: clamp(0.75rem, 2vw, 1.75rem);
-  padding: 0.5rem 0.55rem 0.5rem 1.1rem;
-  width: max-content;
-  max-width: calc(100vw - 2 * var(--gutter));
-
-  background: rgba(10, 55, 101, 0.3);
-  backdrop-filter: blur(16px) saturate(140%);
-  -webkit-backdrop-filter: blur(16px) saturate(140%);
-  border: 0;
-  border-radius: 999px;
-  box-shadow: 0 8px 32px rgba(7, 41, 74, 0.28);
-}
-
-.nav__brand {
-  font-family: var(--font-outfit), system-ui, sans-serif;
-  font-size: 0.88rem;
-  font-weight: 700;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--ink);
-  text-decoration: none;
-  white-space: nowrap;
-}
-
-.nav__brand span {
-  color: var(--accent);
-  margin-left: 0.28em;
-}
-
-.nav__links {
-  display: flex;
-  align-items: center;
-  gap: 0.15rem;
-}
-
-.nav__link {
-  position: relative;
-  appearance: none;
-  border: 0;
-  background: transparent;
-  cursor: pointer;
-  padding: 0.45rem clamp(0.5rem, 1.4vw, 0.95rem);
-  border-radius: 999px;
-  font-family: var(--font-outfit), system-ui, sans-serif;
-  font-size: 0.78rem;
-  font-weight: 500;
-  letter-spacing: 0.04em;
-  color: var(--ink-faint);
-  white-space: nowrap;
-  transition: color 0.35s ease, background-color 0.35s ease;
-}
-
-.nav__active-pill {
-  position: absolute;
-  inset: 0;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.16);
-  z-index: -1;
-}
-
-.nav__link:hover {
-  color: var(--ink);
-}
-
-.nav__link.is-active {
-  color: var(--ink);
-  background: rgba(255, 255, 255, 0.14);
-}
-
-.nav__link:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
-
-/* --------------------------------------------------------------------------
-   Story beats — text held to the left and right, picture kept clear
-   -------------------------------------------------------------------------- */
-
-.story {
-  position: absolute;
-  inset: 0;
-  z-index: 20;
-  pointer-events: none;
-}
-
-/*
-  Fail-safe. AOS parks every [data-aos] block at opacity 0 and relies on a
-  scripted class to bring it back, so any hitch there would leave the site with
-  no readable copy at all. Until the story layer is armed, AOS's start states
-  are neutralised and the text simply renders.
-*/
-.story:not(.is-armed) [data-aos] {
-  opacity: 1;
-  transform: none;
-  transition: none;
-}
-
-.beat {
-  position: absolute;
-  inset: 0;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr);
-  align-items: center;
-  column-gap: 6vw;
-  padding: 0 var(--gutter);
-  will-change: opacity, transform, filter;
-}
-
-.beat__col {
-  /* Wide enough that the longest headline line sets without re-wrapping,
-     narrow enough to leave the centre of frame clear. */
-  max-width: 29rem;
-}
-
-.beat__col--left {
-  justify-self: start;
-}
-
-.beat__col--right {
-  justify-self: end;
-  /* Kept narrow so it hugs the right edge and stays clear of the subject,
-     who sits centre-to-centre-right through most of the sequence. */
-  max-width: 16.5rem;
-  text-align: right;
-  /* Offset from the left column so the two blocks read as a pair, not a row. */
-  transform: translateY(14%);
-}
-
-.beat__eyebrow {
-  margin: 0 0 1rem;
-  font-size: 0.7rem;
-  font-weight: 600;
-  letter-spacing: 0.34em;
-  text-transform: uppercase;
-  color: var(--accent);
-}
-
-.beat__heading {
-  margin: 0 0 1.25rem;
-  font-size: clamp(2rem, 4.3vw, 3.6rem);
-  font-weight: 600;
-  line-height: 1.04;
-  letter-spacing: -0.035em;
-  white-space: pre-line;
-  text-shadow: 0 2px 30px rgba(7, 41, 74, 0.55);
-}
-
-.beat__body {
-  margin: 0;
-  max-width: 22rem;
-  font-size: clamp(0.92rem, 1.15vw, 1.05rem);
-  line-height: 1.65;
-  color: var(--ink-soft);
-  text-shadow: 0 1px 16px rgba(7, 41, 74, 0.5);
-}
-
-.beat__label {
-  margin: 0 0 0.75rem;
-  font-size: 0.7rem;
-  font-weight: 600;
-  letter-spacing: 0.24em;
-  text-transform: uppercase;
-  color: var(--ink);
-}
-
-.beat__detail {
-  margin: 0 0 1.75rem;
-  font-size: 0.9rem;
-  line-height: 1.7;
-  color: var(--ink-soft);
-  text-shadow: 0 1px 16px rgba(7, 41, 74, 0.5);
-}
-
-.beat__stat {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 0.3rem;
-  padding-top: 1.25rem;
-  border-top: 1px solid rgba(255, 255, 255, 0.22);
-}
-
-.beat__stat-value {
-  font-size: clamp(1.6rem, 2.6vw, 2.3rem);
-  font-weight: 600;
-  letter-spacing: -0.03em;
-  line-height: 1;
-}
-
-.beat__stat-caption {
-  font-size: 0.68rem;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--ink-faint);
-}
-
-.beat__cta {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 1.1rem;
-  padding-top: 1.25rem;
-  border-top: 1px solid rgba(255, 255, 255, 0.22);
-}
-
-.beat__button {
-  pointer-events: auto;
-  display: inline-block;
-  padding: 0.85rem 1.6rem;
-  border-radius: 999px;
-  background: var(--ink);
-  color: var(--blue-800);
-  font-size: 0.82rem;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-  text-decoration: none;
-  transition: transform 0.3s ease, box-shadow 0.3s ease;
-}
-
-.beat__button:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 12px 30px rgba(7, 41, 74, 0.4);
-}
-
-.beat__contact {
-  margin: 0;
-  font-size: 0.75rem;
-  line-height: 1.8;
-  letter-spacing: 0.06em;
-  color: var(--ink-faint);
-}
-
-/* --------------------------------------------------------------------------
    Floating WhatsApp button
    -------------------------------------------------------------------------- */
 
 .wa {
-  position: absolute;
+  /* Fixed, not absolute: it lives in the root layout now, so it is anchored to
+     the viewport on every page rather than to the film's pinned stage. */
+  position: fixed;
   right: var(--gutter);
   bottom: clamp(1.25rem, 3.5vh, 2.25rem);
-  z-index: 35;
+  z-index: 45;
 
   display: flex;
   align-items: center;
   gap: 0.6rem;
   text-decoration: none;
-  /* The story layer above is pointer-events: none, so this has to opt back in. */
   pointer-events: auto;
+  /* Anchored through the view transition, like the header — see the
+     ::view-transition rules near the end of this file. */
+  view-transition-name: wa-button;
 }
 
 .wa__badge {
@@ -544,7 +244,8 @@ body {
 .wa:hover .wa__badge,
 .wa:focus-visible .wa__badge {
   transform: translateY(-2px);
-  background: rgba(37, 211, 102, 0.9); /* WhatsApp green, only on intent */
+  background: rgba(37, 211, 102, 0.9);
+  /* WhatsApp green, only on intent */
 }
 
 .wa:focus-visible {
@@ -557,75 +258,6 @@ body {
    Responsive — keep the centre of frame clear on narrow screens
    -------------------------------------------------------------------------- */
 
-@media (max-width: 900px) {
-  :root {
-    /* Shorter than desktop in absolute terms, because a phone viewport is
-       taller relative to its width and a flick covers more of the runway. */
-    --runway: 820vh;
-  }
-
-  .beat {
-    grid-template-columns: 1fr;
-    align-content: space-between;
-    align-items: stretch;
-    padding: clamp(5rem, 12vh, 6.5rem) var(--gutter) clamp(5.25rem, 10.5vh, 6.5rem);
-  }
-
-  .beat__col {
-    max-width: 26rem;
-  }
-
-  .beat__col--right {
-    justify-self: stretch;
-    max-width: 26rem;
-    text-align: left;
-    transform: none;
-  }
-
-  .beat__heading {
-    font-size: clamp(1.6rem, 6.4vw, 2.2rem);
-    margin-bottom: 0.9rem;
-  }
-
-  .beat__eyebrow {
-    margin-bottom: 0.7rem;
-  }
-
-  .beat__body {
-    font-size: 0.88rem;
-    line-height: 1.6;
-  }
-
-  .beat__detail {
-    margin-bottom: 1rem;
-    font-size: 0.82rem;
-  }
-
-  .beat__stat {
-    padding-top: 0.9rem;
-  }
-
-  .beat__stat-value {
-    font-size: 1.5rem;
-  }
-
-  .beat__cta {
-    padding-top: 0.9rem;
-    gap: 0.8rem;
-  }
-
-  .beat__stat,
-  .beat__cta {
-    align-items: flex-start;
-  }
-
-  .stage__scrim {
-    background:
-      linear-gradient(to bottom, rgba(7, 41, 74, 0.72) 0%, rgba(7, 41, 74, 0) 34%),
-      linear-gradient(to top, rgba(7, 41, 74, 0.72) 0%, rgba(7, 41, 74, 0) 36%);
-  }
-}
-
 @media (max-width: 560px) {
   .wa__badge {
     width: 2.9rem;
@@ -636,35 +268,6 @@ body {
   .wa__label {
     display: none;
   }
-
-  .nav {
-    left: var(--gutter);
-    right: var(--gutter);
-    transform: none;
-    width: auto;
-    max-width: none;
-    justify-content: center;
-    padding: 0.35rem 0.4rem;
-  }
-
-  /* The five chapters are the navigation on a phone; the wordmark is already
-     on screen in the film itself, so it gives up its space rather than
-     pushing "Contact" off the edge. */
-  .nav__brand {
-    display: none;
-  }
-
-  .nav__links {
-    width: 100%;
-    justify-content: space-between;
-    gap: 0;
-  }
-
-  .nav__link {
-    padding: 0.4rem 0.3rem;
-    font-size: 0.68rem;
-    letter-spacing: 0;
-  }
 }
 
 /* --------------------------------------------------------------------------
@@ -672,19 +275,9 @@ body {
    -------------------------------------------------------------------------- */
 
 @media (prefers-reduced-motion: reduce) {
-  .beat {
-    filter: none !important;
-  }
 
-  [data-aos] {
-    opacity: 1 !important;
-    transform: none !important;
-    transition: none !important;
-  }
-
-  .stage__canvas,
+  .chapter__canvas,
   .loader__fill,
-  .beat__button,
   .wa__badge,
   .wa__label {
     transition: none;
@@ -717,146 +310,3094 @@ body {
   background: rgba(255, 255, 255, 0.4);
 }
 
+/* ==========================================================================
+   PAGES — the site around the film
+
+   Everything above this line dresses the film: the ambient world, the pinned
+   canvas, the caption layer. Everything below is the rest of the website — the
+   chrome that survives a navigation, the page content that scrolls normally,
+   and the view transitions that carry one view into the next.
+   ========================================================================== */
+
+:root {
+  /* Page-content tokens. The film's tokens are at the top of this file; these
+     are the ones every ordinary surface, edge and container is built from, so a
+     panel on the pricing page and a card on the homepage cannot drift apart. */
+  --shell: 74rem;
+  --line: rgba(255, 255, 255, 0.12);
+  --surface: linear-gradient(180deg,
+      rgba(255, 255, 255, 0.07) 0%,
+      rgba(255, 255, 255, 0.028) 100%);
+  --surface-strong: rgba(7, 41, 74, 0.62);
+  --radius-lg: 24px;
+  --radius-md: 16px;
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+
+  /* Height of an inner page's scrubbed hero, set to match the film's scrub speed
+     rather than picked by eye. The film gives 239 frames 850vh of travel (950vh
+     of runway less the 100vh the stage stays pinned for), which is ~3.6vh per
+     frame. A ~23-frame strip therefore wants ~80vh of travel, plus its own 100vh
+     pin. Scrolling a strip and scrolling the film move the picture at the same
+     rate, which is the whole reason the strips are here. */
+  --strip-runway: 180vh;
+}
+
 /* --------------------------------------------------------------------------
-   Scene text — the cinematic caption layer over the canvas
-
-   Placement is driven by config/scenes.ts, which picks the third of the frame
-   with the flattest measured luma. The modifiers below only turn that choice
-   into a box; they carry no opinion about which scene goes where.
-
-   Every animated property is set inline by SceneText.tsx (transform, opacity
-   and one filter on the block). Nothing here transitions, because the motion
-   is scroll-driven — a CSS transition would fight the scrub and lag the words
-   behind the frames.
+   Skip link — first thing in the tab order, invisible until it is needed
    -------------------------------------------------------------------------- */
 
-.sceneLayer {
-  position: absolute;
-  inset: 0;
-  z-index: 20;
-  pointer-events: none;
+.skipLink {
+  position: fixed;
+  top: 0.6rem;
+  left: 0.6rem;
+  z-index: 100;
+  padding: 0.75rem 1.1rem;
+  border-radius: 12px;
+  background: var(--accent);
+  color: #06243f;
+  font-size: 0.85rem;
+  font-weight: 700;
+  text-decoration: none;
+  transform: translateY(-180%);
+  transition: transform 180ms var(--ease-out);
 }
 
-.scene {
-  position: absolute;
-  inset: 0;
+.skipLink:focus,
+.skipLink:focus-visible {
+  transform: none;
+}
+
+/* --------------------------------------------------------------------------
+   Scroll progress hairline
+   -------------------------------------------------------------------------- */
+
+.scrollBar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  z-index: 65;
+  background: linear-gradient(90deg, var(--accent), #ffffff);
+  /* Named so the view transition leaves it alone — see the rules at the end of
+     this file. A progress bar that slides sideways during a navigation is the
+     one element on screen whose whole job is to not lie about position. */
+  view-transition-name: scroll-bar;
+}
+
+/* --------------------------------------------------------------------------
+   Site navigation — fixed, glass, and the anchor of every view transition
+   -------------------------------------------------------------------------- */
+
+.siteNav {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 60;
+  /* No CSS transform here: Motion animates `y` on this element and writes the
+     whole transform property, so anything set here would be overwritten. */
+}
+
+.siteNav__inner {
   display: flex;
-  pointer-events: none;
-  /* Clear of the navbar at the top and the WhatsApp button at the bottom. */
-  padding: clamp(5.5rem, 14vh, 8rem) var(--gutter) clamp(5rem, 12vh, 7rem);
+  align-items: center;
+  gap: clamp(0.5rem, 2vw, 1.5rem);
+  padding: 0.8rem var(--gutter);
+  background: transparent;
+  border-bottom: 1px solid transparent;
+  transition: background 320ms ease, border-color 320ms ease;
 }
 
-.scene--left { justify-content: flex-start; }
-.scene--center { justify-content: center; }
-.scene--right { justify-content: flex-end; }
-
-.scene--top { align-items: flex-start; }
-.scene--middle { align-items: center; }
-.scene--bottom { align-items: flex-end; }
-
-.scene__inner {
-  /* A measure narrow enough to stay inside the scrimmed third of the frame. */
-  max-width: min(34ch, 38vw);
+.siteNav.is-lifted .siteNav__inner {
+  background: rgba(7, 41, 74, 0.6);
+  backdrop-filter: blur(18px) saturate(150%);
+  -webkit-backdrop-filter: blur(18px) saturate(150%);
+  border-bottom-color: rgba(255, 255, 255, 0.1);
 }
 
-.scene--centered .scene__inner {
-  max-width: min(46ch, 64vw);
-  text-align: center;
-}
-
-.scene__label {
-  margin: 0 0 clamp(0.7rem, 1.6vh, 1.1rem);
+.siteNav__brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
   font-family: var(--font-outfit), system-ui, sans-serif;
-  font-size: clamp(0.66rem, 0.78vw, 0.76rem);
+  font-size: 1.02rem;
   font-weight: 600;
-  letter-spacing: 0.2em;
+  letter-spacing: 0.01em;
+  color: var(--ink);
+  text-decoration: none;
+  min-height: 44px;
+}
+
+.siteNav__logoImg {
+  object-fit: contain;
+  width: auto;
+  height: 32px;
+  max-height: 36px;
+  filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.3));
+}
+
+.siteNav__brandAccent {
+  color: var(--accent);
+}
+
+.siteNav__mark {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 10px;
+  background: rgba(143, 208, 245, 0.16);
+  color: var(--accent);
+}
+
+.siteNav__links {
+  display: flex;
+  gap: 0.1rem;
+  margin-inline: auto;
+}
+
+.siteNav__link {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0.5rem 0.95rem;
+  border-radius: 999px;
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--ink-soft);
+  text-decoration: none;
+  transition: color 200ms ease;
+}
+
+.siteNav__link:hover {
+  color: var(--ink);
+}
+
+.siteNav__link.is-active {
+  color: var(--ink);
+}
+
+.siteNav__pill {
+  position: absolute;
+  inset: 0;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.13);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.siteNav__linkLabel {
+  position: relative;
+}
+
+.siteNav__link:focus-visible,
+.siteNav__brand:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+  border-radius: 999px;
+}
+
+.siteNav__actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.siteNav__toggle {
+  display: none;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--ink);
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.siteNav__toggleBars {
+  display: grid;
+  gap: 5px;
+  width: 17px;
+}
+
+.siteNav__toggleBars span {
+  display: block;
+  width: 100%;
+  height: 2px;
+  border-radius: 2px;
+  background: currentColor;
+}
+
+/* --------------------------------------------------------------------------
+   Mobile menu sheet
+   -------------------------------------------------------------------------- */
+
+.sheet {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+}
+
+.sheet__scrim {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  border: 0;
+  padding: 0;
+  background: rgba(4, 20, 38, 0.72);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  cursor: default;
+}
+
+.sheet__panel {
+  position: relative;
+  z-index: 1;
+  margin: 0.7rem;
+  padding: 1.1rem;
+  border-radius: var(--radius-lg);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(7, 41, 74, 0.94);
+  backdrop-filter: blur(22px) saturate(150%);
+  -webkit-backdrop-filter: blur(22px) saturate(150%);
+  box-shadow: 0 40px 90px -50px rgba(0, 0, 0, 0.9);
+}
+
+.sheet__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.4rem;
+}
+
+.sheet__eyebrow {
+  margin: 0;
+  font-size: 0.7rem;
+  letter-spacing: 0.18em;
   text-transform: uppercase;
   color: var(--ink-faint);
 }
 
-.scene__headline {
-  margin: 0;
-  font-family: var(--font-outfit), system-ui, sans-serif;
-  font-size: clamp(2.2rem, 5.5vw, 4.6rem);
-  font-weight: 700;
-  line-height: 1.03;
-  letter-spacing: -0.025em;
-  text-wrap: balance;
-  text-shadow: 0 1px 28px rgba(7, 41, 74, 0.5);
+.sheet__close {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--ink);
+  cursor: pointer;
+  touch-action: manipulation;
 }
 
-.scene__line {
+.sheet__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.15rem;
+}
+
+.sheet__link {
+  display: flex;
+  align-items: baseline;
+  gap: 0.85rem;
+  min-height: 56px;
+  padding: 0.8rem 0.7rem;
+  border-radius: 14px;
+  text-decoration: none;
+  color: var(--ink);
+}
+
+.sheet__link.is-active,
+.sheet__link:hover {
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.sheet__index {
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--accent);
+}
+
+.sheet__link strong {
+  display: block;
+  font-family: var(--font-outfit), system-ui, sans-serif;
+  font-size: 1.05rem;
+  font-weight: 600;
+}
+
+.sheet__link em {
+  display: block;
+  margin-top: 0.15rem;
+  font-style: normal;
+  font-size: 0.82rem;
+  color: var(--ink-faint);
+}
+
+/* --------------------------------------------------------------------------
+   Scroll cue
+   -------------------------------------------------------------------------- */
+
+.cue {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: clamp(1.25rem, 4vh, 2.25rem);
+  z-index: 30;
+  display: grid;
+  justify-items: center;
+  gap: 0.5rem;
+  pointer-events: none;
+}
+
+.cue__label {
+  font-size: 0.66rem;
+  font-weight: 600;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+.cue__track {
+  position: relative;
+  display: block;
+  width: 1px;
+  height: 34px;
+  background: linear-gradient(to bottom, rgba(255, 255, 255, 0.35), transparent);
+}
+
+.cue__dot {
+  position: absolute;
+  top: 0;
+  left: -2px;
+  width: 5px;
+  height: 5px;
+  border-radius: 999px;
+  background: var(--accent);
+}
+
+/* --------------------------------------------------------------------------
+   Film strip — the scrubbed hero on every inner page
+   -------------------------------------------------------------------------- */
+
+.strip {
+  position: relative;
+  z-index: 1;
+  height: var(--strip-runway);
+}
+
+.strip__pin {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  height: 100svh;
+  overflow: hidden;
+  display: grid;
+  align-items: center;
+}
+
+.strip__canvas {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  transition: opacity 900ms ease-out;
+  -webkit-mask-image: radial-gradient(ellipse 110% 110% at 50% 50%,
+      #000 62%,
+      rgba(0, 0, 0, 0) 100%);
+  mask-image: radial-gradient(ellipse 110% 110% at 50% 50%,
+      #000 62%,
+      rgba(0, 0, 0, 0) 100%);
+}
+
+.strip__pin.is-ready .strip__canvas {
+  opacity: 1;
+}
+
+.strip__scrim {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(to right,
+      rgba(7, 41, 74, 0.88) 0%,
+      rgba(7, 41, 74, 0.45) 46%,
+      rgba(7, 41, 74, 0.62) 100%),
+    linear-gradient(to bottom, rgba(7, 41, 74, 0.7) 0%, rgba(7, 41, 74, 0) 28%);
+}
+
+.strip__copy {
+  position: relative;
+  z-index: 2;
+  width: 100%;
+  padding-inline: var(--gutter);
+}
+
+.strip__eyebrow {
+  margin: 0 0 1rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+.strip__headline {
+  margin: 0;
+  font-family: var(--font-outfit), system-ui, sans-serif;
+  font-size: clamp(2.35rem, 7vw, 4.6rem);
+  font-weight: 600;
+  line-height: 0.98;
+  letter-spacing: -0.03em;
+  text-wrap: balance;
+}
+
+.strip__line {
+  display: block;
+  overflow: hidden;
+}
+
+.strip__line>span {
   display: block;
 }
 
-/* inline-block is what makes the per-word transform possible at all. */
-.scene__word {
-  display: inline-block;
-  /* Set by SceneText on every tick; these are only the pre-paint defaults. */
-  opacity: 0;
-  transform: translate3d(0, 40px, 0);
-  backface-visibility: hidden;
-}
-
-.scene__desc {
-  margin: clamp(0.9rem, 2.2vh, 1.4rem) 0 0;
-  max-width: 34ch;
-  font-size: clamp(0.94rem, 1.15vw, 1.1rem);
-  line-height: 1.55;
+.strip__lede {
+  margin: 1.25rem 0 0;
+  max-width: 44ch;
+  font-size: clamp(1rem, 1.6vw, 1.15rem);
+  line-height: 1.65;
   color: var(--ink-soft);
-  text-shadow: 0 1px 18px rgba(7, 41, 74, 0.45);
 }
 
-.scene--centered .scene__desc {
-  margin-inline: auto;
+.strip__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: clamp(1.25rem, 3vw, 2.5rem);
+  margin-top: 1.6rem;
 }
 
-/* Dark type, for a frame whose flattest region is bright. None of the current
-   ten scenes use this: the side and top scrims darken every edge, so light
-   type is correct throughout. Kept because the next clip may not be so blue. */
-.scene--dark .scene__label {
-  color: rgba(7, 41, 74, 0.6);
+.strip__meta p {
+  margin: 0;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
 }
 
-.scene--dark .scene__headline,
-.scene--dark .scene__desc {
-  color: var(--blue-900);
-  text-shadow: 0 1px 22px rgba(255, 255, 255, 0.5);
+.strip__meta strong {
+  display: block;
+  margin-bottom: 0.15rem;
+  font-family: var(--font-outfit), system-ui, sans-serif;
+  font-size: 1.6rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  text-transform: none;
+  color: var(--ink);
+}
+
+/* --------------------------------------------------------------------------
+   Sections, shells and type scale
+   -------------------------------------------------------------------------- */
+
+.section {
+  position: relative;
+  z-index: 1;
+  padding: clamp(3.5rem, 9vh, 7rem) 0;
+}
+
+.section--flush {
+  padding-bottom: clamp(1.5rem, 4vh, 2.5rem);
+}
+
+.section--outro {
+  padding-top: clamp(4rem, 11vh, 8rem);
+}
+
+.section--tint {
+  background: rgba(7, 41, 74, 0.42);
+  border-block: 1px solid var(--line);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+.shell {
+  width: 100%;
+  padding-inline: var(--gutter);
+}
+
+.shell--split {
+  display: grid;
+  grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr);
+  gap: clamp(1.75rem, 5vw, 4.5rem);
+  align-items: start;
+}
+
+.shell--split-wide {
+  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
+}
+
+.section__head {
+  max-width: 46rem;
+  margin-bottom: clamp(1.75rem, 4vw, 3rem);
+  display: grid;
+  gap: 0.85rem;
+}
+
+.split__head {
+  position: sticky;
+  top: clamp(6rem, 14vh, 8rem);
+  display: grid;
+  gap: 0.9rem;
+  align-content: start;
+  justify-items: start;
+}
+
+.eyebrow {
+  margin: 0;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+.h2 {
+  margin: 0;
+  font-family: var(--font-outfit), system-ui, sans-serif;
+  font-size: clamp(1.9rem, 4.4vw, 3.1rem);
+  font-weight: 600;
+  line-height: 1.06;
+  letter-spacing: -0.025em;
+  text-wrap: balance;
+}
+
+.h3 {
+  margin: 0;
+  font-family: var(--font-outfit), system-ui, sans-serif;
+  font-size: clamp(1.12rem, 2vw, 1.4rem);
+  font-weight: 600;
+  line-height: 1.25;
+  letter-spacing: -0.012em;
+}
+
+.h4 {
+  margin: 0 0 0.4rem;
+  font-family: var(--font-outfit), system-ui, sans-serif;
+  font-size: 1.05rem;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.lede {
+  margin: 0;
+  max-width: 48ch;
+  font-size: clamp(0.98rem, 1.4vw, 1.12rem);
+  line-height: 1.65;
+  color: var(--ink-soft);
+}
+
+.body {
+  margin: 0;
+  max-width: 62ch;
+  font-size: 0.95rem;
+  line-height: 1.7;
+  color: var(--ink-soft);
+}
+
+.prose {
+  display: grid;
+  gap: 1.1rem;
+  justify-items: start;
+}
+
+/* --------------------------------------------------------------------------
+   Buttons
+   -------------------------------------------------------------------------- */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  white-space: nowrap;
+  flex-shrink: 0;
+  gap: 0.5rem;
+  min-height: 48px;
+  padding: 0.85rem 1.5rem;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  font-family: var(--font-jakarta), system-ui, sans-serif;
+  font-size: 0.88rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  text-decoration: none;
+  cursor: pointer;
+  touch-action: manipulation;
+  transition: transform 200ms var(--ease-out), background 200ms ease,
+    border-color 200ms ease, box-shadow 200ms ease;
+}
+
+.btn--primary {
+  background: var(--accent);
+  color: #06243f;
+  box-shadow: 0 18px 40px -22px rgba(143, 208, 245, 0.8);
+}
+
+.btn--primary:hover {
+  background: #a8dcf9;
+  transform: translateY(-2px);
+}
+
+.btn--ghost {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.24);
+  color: var(--ink);
+}
+
+.btn--ghost:hover {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.4);
+  transform: translateY(-2px);
+}
+
+.btn--sm {
+  min-height: 40px;
+  padding: 0.55rem 1.05rem;
+  font-size: 0.8rem;
+}
+
+.btn--block {
+  width: 100%;
+}
+
+.btn:active {
+  transform: translateY(0);
+}
+
+.btn:focus-visible {
+  outline: 2px solid #ffffff;
+  outline-offset: 3px;
+}
+
+.ctaRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.ctaBand {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: clamp(1.5rem, 4vw, 3rem);
+  padding: clamp(1.6rem, 4vw, 3rem);
+  border-radius: 28px;
+  border: 1px solid rgba(143, 208, 245, 0.22);
+  background: linear-gradient(120deg,
+      rgba(143, 208, 245, 0.15) 0%,
+      rgba(255, 255, 255, 0.03) 60%);
+}
+
+.ctaBand .lede {
+  margin-top: 0.6rem;
+}
+
+/* --------------------------------------------------------------------------
+   Cards, bento grid and the pointer spotlight
+   -------------------------------------------------------------------------- */
+
+.spotlight {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+}
+
+.spotlight__glow {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 260ms ease;
+  background: radial-gradient(260px circle at var(--mx, 50%) var(--my, 50%),
+      rgba(143, 208, 245, 0.18),
+      transparent 68%);
+}
+
+.spotlight:hover .spotlight__glow,
+.spotlight:focus-within .spotlight__glow {
+  opacity: 1;
+}
+
+.spotlight__content {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  height: 100%;
+}
+
+.card {
+  padding: clamp(1.3rem, 2.4vw, 1.9rem);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--line);
+  background: var(--surface);
+  backdrop-filter: blur(14px) saturate(140%);
+  -webkit-backdrop-filter: blur(14px) saturate(140%);
+  transition: transform 260ms var(--ease-out), border-color 260ms ease;
+}
+
+.card:hover,
+.card:focus-within {
+  transform: translateY(-4px);
+  border-color: rgba(143, 208, 245, 0.4);
+}
+
+.card__tag {
+  margin: 0;
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+.card__top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.card__price {
+  margin: 0;
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--accent);
+  white-space: nowrap;
+}
+
+.cards {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: clamp(0.9rem, 1.8vw, 1.35rem);
+}
+
+.cards--three {
+  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+}
+
+/* A bento grid rather than equal tiles: the two services most people book are
+   given the space that says so. */
+.bento {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: clamp(0.9rem, 1.6vw, 1.25rem);
+}
+
+.bento__slot {
+  grid-column: span 2;
+  display: grid;
+}
+
+.bento__slot--wide,
+.bento__slot--tall {
+  grid-column: span 3;
+}
+
+.bento__slot--full {
+  grid-column: span 6;
+}
+
+.card--service .body {
+  max-width: 48ch;
+}
+
+/* --------------------------------------------------------------------------
+   Stats, tags and tick lists
+   -------------------------------------------------------------------------- */
+
+.stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+  gap: clamp(1rem, 2.5vw, 2rem);
+  margin: clamp(2.5rem, 5vw, 4rem) 0;
+  padding: clamp(1.4rem, 3vw, 2rem) 0;
+  border-block: 1px solid var(--line);
+}
+
+.stat__value {
+  margin: 0 0 0.3rem;
+  font-family: var(--font-outfit), system-ui, sans-serif;
+  font-size: clamp(1.8rem, 3.4vw, 2.5rem);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  /* Tabular figures: without them a counting number changes width on every
+     tick and the whole row jitters. */
+  font-variant-numeric: tabular-nums;
+}
+
+.stat__label {
+  margin: 0;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+.tags {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  margin: 0;
+  padding: 0;
+}
+
+.tag {
+  padding: 0.36rem 0.72rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.05);
+  font-size: 0.75rem;
+  color: var(--ink-soft);
+}
+
+.tag--more {
+  border-color: rgba(143, 208, 245, 0.34);
+  color: var(--accent);
+}
+
+.ticks {
+  list-style: none;
+  display: grid;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0;
+}
+
+.ticks li {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.55rem;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  color: var(--ink-soft);
+}
+
+.ticks svg {
+  flex: 0 0 auto;
+  margin-top: 0.24rem;
+  color: var(--accent);
+}
+
+.ruleList {
+  list-style: none;
+  display: grid;
+  gap: clamp(0.85rem, 2vw, 1.25rem);
+  margin: 0;
+  padding: 0;
+}
+
+.rule {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 1rem;
+  padding: clamp(1.1rem, 2vw, 1.5rem);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.rule__index {
+  margin: 0;
+  font-family: var(--font-outfit), system-ui, sans-serif;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+/* --------------------------------------------------------------------------
+   Marquee
+   -------------------------------------------------------------------------- */
+
+.marquee {
+  position: relative;
+  z-index: 1;
+  overflow: hidden;
+  padding: 0.9rem 0;
+  border-block: 1px solid var(--line);
+  background: rgba(7, 41, 74, 0.38);
+  -webkit-mask-image: linear-gradient(to right,
+      transparent,
+      #000 8%,
+      #000 92%,
+      transparent);
+  mask-image: linear-gradient(to right,
+      transparent,
+      #000 8%,
+      #000 92%,
+      transparent);
+}
+
+.marquee__track {
+  display: flex;
+  width: max-content;
+  animation: marquee 42s linear infinite;
+}
+
+.marquee__row {
+  display: flex;
+  align-items: center;
+  gap: clamp(1.5rem, 3vw, 3rem);
+  list-style: none;
+  margin: 0;
+  padding: 0 clamp(0.75rem, 1.5vw, 1.5rem);
+}
+
+.marquee__row li {
+  display: flex;
+  align-items: center;
+  gap: clamp(1.5rem, 3vw, 3rem);
+  white-space: nowrap;
+  font-family: var(--font-outfit), system-ui, sans-serif;
+  font-size: clamp(1rem, 2vw, 1.35rem);
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  /* 4.6:1 on the base blue. The ticker is decorative in intent but it is still
+     real words at 16-21px, which is not "large text" by WCAG. */
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.marquee__row li::after {
+  content: "·";
+  color: var(--accent);
+  opacity: 0.65;
+}
+
+@keyframes marquee {
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+/* --------------------------------------------------------------------------
+   Process — sticky ring, scrolling steps
+   -------------------------------------------------------------------------- */
+
+.process {
+  position: relative;
+  z-index: 1;
+}
+
+.process__inner {
+  display: grid;
+  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.45fr);
+  gap: clamp(1.75rem, 5vw, 5rem);
+  align-items: start;
+}
+
+.process__sticky {
+  position: sticky;
+  top: clamp(6rem, 15vh, 9rem);
+  display: grid;
+  gap: 1rem;
+  justify-items: start;
+}
+
+.process__ring {
+  position: relative;
+  width: clamp(96px, 11vw, 130px);
+}
+
+.process__ring svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  transform: rotate(-90deg);
+}
+
+.process__ringTrack {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.13);
+  stroke-width: 5;
+}
+
+.process__ringFill {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 5;
+  stroke-linecap: round;
+}
+
+.process__percent {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-family: var(--font-outfit), system-ui, sans-serif;
+  font-size: 1.05rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.process__counter {
+  margin: 0;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+.process__now {
+  display: grid;
+  gap: 0.35rem;
+  max-width: 18rem;
+}
+
+.process__duration {
+  margin: 0;
+  font-size: 0.82rem;
+  color: var(--accent);
+}
+
+.process__dots {
+  list-style: none;
+  display: flex;
+  gap: 0.35rem;
+  margin: 0;
+  padding: 0;
+}
+
+.process__dot {
+  width: 26px;
+  height: 3px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.16);
+  transition: background 300ms ease;
+}
+
+.process__dot.is-done {
+  background: rgba(143, 208, 245, 0.5);
+}
+
+.process__dot.is-active {
+  background: var(--accent);
+}
+
+.process__steps {
+  list-style: none;
+  display: grid;
+  gap: clamp(2.5rem, 9vh, 6rem);
+  margin: 0;
+  padding: 0;
+}
+
+/* The inactive steps are marked by a rule down their edge, not by being faded.
+   Dimming the copy to 40% was the obvious way to focus the active step and it put
+   every other step's body text below 3:1 — six paragraphs of unreadable content
+   to highlight one. The rule and the still do the same job on elements where
+   contrast is not the point. */
+.process__step {
+  padding-left: clamp(0.9rem, 2vw, 1.4rem);
+  border-left: 2px solid rgba(255, 255, 255, 0.1);
+  transition: border-color 420ms ease;
+}
+
+.process__step.is-active {
+  border-left-color: var(--accent);
+}
+
+.process__shot {
+  opacity: 0.6;
+  transform: scale(0.985);
+  transition: opacity 420ms ease, transform 420ms var(--ease-out);
+}
+
+.process__step.is-active .process__shot {
+  opacity: 1;
+  transform: none;
+}
+
+.process__stepHead {
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+}
+
+.process__stepIndex {
+  margin: 0;
+  font-family: var(--font-outfit), system-ui, sans-serif;
+  font-size: 0.9rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--accent);
+}
+
+.process__shot {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  margin: 1rem 0 1.1rem;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--line);
+}
+
+.process__step .ticks {
+  margin-top: 1rem;
+}
+
+.process__stepTime {
+  margin: 1rem 0 0;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+/* --------------------------------------------------------------------------
+   Pricing — switch, plans, rate table
+   -------------------------------------------------------------------------- */
+
+.switch {
+  display: grid;
+  justify-items: center;
+  gap: 0.7rem;
+  margin-bottom: clamp(1.75rem, 4vw, 2.75rem);
+}
+
+.switch__group {
+  display: inline-flex;
+  gap: 0.2rem;
+  padding: 0.28rem;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: rgba(7, 41, 74, 0.5);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+.switch__btn {
+  position: relative;
+  min-height: 44px;
+  padding: 0.6rem 1.2rem;
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  color: var(--ink-soft);
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.switch__btn.is-active {
+  color: #06243f;
+}
+
+.switch__pill {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  border-radius: 999px;
+  background: var(--accent);
+}
+
+.switch__label {
+  position: relative;
+  z-index: 1;
+}
+
+.switch__btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.switch__note {
+  margin: 0;
+  max-width: 42ch;
+  text-align: center;
+  font-size: 0.82rem;
+  color: var(--ink-faint);
+}
+
+.plans {
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(16.5rem, 1fr));
+  gap: clamp(0.9rem, 2vw, 1.4rem);
+  margin: 0;
+  padding: 0;
+}
+
+.plan {
+  height: 100%;
+  padding: clamp(1.3rem, 2.4vw, 1.9rem);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--line);
+  background: var(--surface);
+  backdrop-filter: blur(14px) saturate(140%);
+  -webkit-backdrop-filter: blur(14px) saturate(140%);
+  transition: transform 260ms var(--ease-out), border-color 260ms ease;
+}
+
+.plan:hover,
+.plan:focus-within {
+  transform: translateY(-4px);
+  border-color: rgba(143, 208, 245, 0.4);
+}
+
+.plan--featured {
+  border-color: rgba(143, 208, 245, 0.45);
+  box-shadow: 0 40px 90px -55px rgba(143, 208, 245, 0.75);
+}
+
+.plan__badge {
+  align-self: flex-start;
+  margin: 0;
+  padding: 0.28rem 0.7rem;
+  border-radius: 999px;
+  background: rgba(143, 208, 245, 0.18);
+  color: var(--accent);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.plan__blurb {
+  margin: 0;
+  font-size: 0.9rem;
+  line-height: 1.6;
+  color: var(--ink-soft);
+}
+
+/* Space reserved for the tallest price + unit pair, so switching billing modes
+   cross-fades without moving anything below it. */
+.plan__priceWrap {
+  min-height: 5.4rem;
+  padding-top: 0.4rem;
+}
+
+.plan__price {
+  margin: 0;
+  font-family: var(--font-outfit), system-ui, sans-serif;
+  font-size: clamp(2rem, 4vw, 2.7rem);
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
+}
+
+.plan__unit {
+  margin: 0.2rem 0 0;
+  font-size: 0.78rem;
+  color: var(--ink-faint);
+}
+
+.plan .btn {
+  margin-top: auto;
+}
+
+.tableWrap {
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.table {
+  width: 100%;
+  min-width: 32rem;
+  border-collapse: collapse;
+  font-size: 0.92rem;
+}
+
+.table th,
+.table td {
+  padding: 0.85rem 1.1rem;
+  text-align: left;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.table thead th {
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+.table tbody th {
+  font-weight: 500;
+  color: var(--ink);
+}
+
+.table td {
+  color: var(--ink-soft);
+  font-variant-numeric: tabular-nums;
+}
+
+.table__plan {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.table tbody tr:last-child th,
+.table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+/* --------------------------------------------------------------------------
+   Accordion
+   -------------------------------------------------------------------------- */
+
+.accordion {
+  border-top: 1px solid var(--line);
+}
+
+.accordion__row {
+  border-bottom: 1px solid var(--line);
+}
+
+.accordion__heading {
+  margin: 0;
+}
+
+.accordion__trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  width: 100%;
+  min-height: 56px;
+  padding: 1.1rem 0;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  font-size: 1rem;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.accordion__trigger:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.accordion__icon {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  color: var(--accent);
+}
+
+.accordion__panel {
+  overflow: hidden;
+}
+
+.accordion__panel p {
+  margin: 0 0 1.15rem;
+  max-width: 62ch;
+  font-size: 0.93rem;
+  line-height: 1.7;
+  color: var(--ink-soft);
+}
+
+/* --------------------------------------------------------------------------
+   Contact — list and form
+   -------------------------------------------------------------------------- */
+
+.contactList {
+  list-style: none;
+  display: grid;
+  gap: 0.7rem;
+  margin: clamp(1.25rem, 3vw, 1.85rem) 0 0;
+  padding: 0;
+  width: 100%;
+}
+
+.contactList li {
+  display: grid;
+  grid-template-columns: 6.5rem minmax(0, 1fr);
+  gap: 0.75rem;
+  align-items: baseline;
+  padding-top: 0.7rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  font-size: 0.95rem;
+  color: var(--ink-soft);
+}
+
+.contactList__label {
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+.contactList a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.contactList a:hover {
+  text-decoration: underline;
+}
+
+.formCard {
+  padding: clamp(1.25rem, 2.6vw, 2rem);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--line);
+  background: var(--surface);
+  backdrop-filter: blur(16px) saturate(140%);
+  -webkit-backdrop-filter: blur(16px) saturate(140%);
+}
+
+.form__live {
+  min-height: 0;
+}
+
+.form__summary,
+.form__sent {
+  margin: 0 0 1rem;
+  padding: 0.75rem 0.9rem;
+  border-radius: 12px;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.form__summary {
+  border: 1px solid rgba(255, 150, 130, 0.5);
+  background: rgba(255, 120, 100, 0.12);
+  color: #ffc9c0;
+}
+
+.form__sent {
+  border: 1px solid rgba(143, 208, 245, 0.45);
+  background: rgba(143, 208, 245, 0.12);
+  color: var(--accent);
+}
+
+.form__grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.field {
+  display: grid;
+  gap: 0.4rem;
+  align-content: start;
+}
+
+.field--wide {
+  grid-column: 1 / -1;
+}
+
+.field__label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  color: var(--ink-soft);
+}
+
+.field__optional {
+  font-weight: 400;
+  color: var(--ink-faint);
+}
+
+.field__input {
+  width: 100%;
+  min-height: 48px;
+  padding: 0.7rem 0.9rem;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 12px;
+  background: rgba(7, 41, 74, 0.5);
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.95rem;
+}
+
+.field__input::placeholder {
+  color: rgba(255, 255, 255, 0.34);
+}
+
+.field__input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-color: transparent;
+}
+
+.field__input--area {
+  min-height: 96px;
+  resize: vertical;
+}
+
+.field.has-error .field__input {
+  border-color: rgba(255, 150, 130, 0.75);
+}
+
+.field__error {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0;
+  font-size: 0.8rem;
+  /* Paired with an icon: the error is never signalled by colour alone. */
+  color: #ffc9c0;
+}
+
+.form__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.7rem;
+  margin-top: 1.4rem;
+}
+
+.form__note {
+  margin: 1.1rem 0 0;
+  max-width: 60ch;
+  font-size: 0.78rem;
+  line-height: 1.6;
+  color: var(--ink-faint);
+}
+
+/* --------------------------------------------------------------------------
+   Footer
+   -------------------------------------------------------------------------- */
+
+/* Establishes the 3D space `footerReveal__panel`'s `rotateX` renders into.
+   Scoped to just this wrapper — see `FooterReveal.tsx` for why it can't live
+   any higher up the tree. */
+.footerReveal {
+  position: relative;
+  perspective: 1400px;
+}
+
+.footerReveal__panel {
+  transform-origin: bottom center;
+  will-change: transform, opacity;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .footerReveal__panel {
+    transform: none !important;
+    opacity: 1 !important;
+  }
+}
+
+.footer {
+  position: relative;
+  z-index: 1;
+  padding: clamp(2.5rem, 6vw, 4rem) 0 1.4rem;
+  background: rgba(4, 22, 42, 0.55);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+.footer__inner {
+  display: grid;
+  grid-template-columns: 1.5fr 1fr 1fr;
+  gap: clamp(1.5rem, 4vw, 3rem);
+  padding-inline: var(--gutter);
+}
+
+.footer__brand {
+  margin: 0 0 0.6rem;
+  font-family: var(--font-outfit), system-ui, sans-serif;
+  font-size: 1.3rem;
+  font-weight: 600;
+}
+
+.footer__brand span {
+  color: var(--accent);
+}
+
+.footer__line {
+  margin: 0 0 0.4rem;
+  max-width: 34ch;
+  font-size: 0.9rem;
+  line-height: 1.6;
+  color: var(--ink-soft);
+}
+
+.footer__line--faint {
+  font-size: 0.82rem;
+  color: var(--ink-faint);
+}
+
+.footer__title {
+  margin: 0 0 0.8rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+.footer__nav ul {
+  list-style: none;
+  display: grid;
+  gap: 0.35rem;
+  margin: 0;
+  padding: 0;
+}
+
+.footer__nav a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 34px;
+  font-size: 0.92rem;
+  color: var(--ink-soft);
+  text-decoration: none;
+}
+
+.footer__nav a:hover {
+  color: var(--ink);
+  text-decoration: underline;
+}
+
+.footer__base {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-top: clamp(2rem, 4vw, 3rem);
+  padding: 1.2rem var(--gutter) 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  font-size: 0.75rem;
+  color: var(--ink-faint);
+}
+
+.footer__base p {
+  margin: 0;
+}
+
+/* --------------------------------------------------------------------------
+   View transitions — how one page becomes the next
+
+   React's <ViewTransition> (see components/PageView.tsx) tags the outgoing and
+   incoming snapshots with these class names. The offsets are small on purpose:
+   60px is enough to say "forward" or "back" without asking the eye to track
+   something across the whole viewport, and the blur in the fade hides the
+   pixel-level interpolation of a screenshot being moved.
+   -------------------------------------------------------------------------- */
+
+/* The overlay swallows clicks for the duration of the animation otherwise. */
+::view-transition {
+  pointer-events: none;
+}
+
+/* Anchored chrome: not snapshotted, so it stays still while the page moves
+   underneath it. One fixed reference point is what tells the viewer the content
+   changed rather than the whole window. */
+::view-transition-group(site-header),
+::view-transition-group(scroll-bar),
+::view-transition-group(wa-button) {
+  animation: none;
+  z-index: 100;
+}
+
+::view-transition-old(site-header),
+::view-transition-old(scroll-bar),
+::view-transition-old(wa-button) {
+  display: none;
+}
+
+::view-transition-new(site-header),
+::view-transition-new(scroll-bar),
+::view-transition-new(wa-button) {
+  animation: none;
+}
+
+::view-transition-old(.nav-forward) {
+  --slide-offset: -60px;
+  animation:
+    150ms ease-in both vtFade reverse,
+    400ms ease-in-out both vtSlide reverse;
+}
+
+::view-transition-new(.nav-forward) {
+  --slide-offset: 60px;
+  animation:
+    210ms ease-out 150ms both vtFade,
+    400ms ease-in-out both vtSlide;
+}
+
+::view-transition-old(.nav-back) {
+  --slide-offset: 60px;
+  animation:
+    150ms ease-in both vtFade reverse,
+    400ms ease-in-out both vtSlide reverse;
+}
+
+::view-transition-new(.nav-back) {
+  --slide-offset: -60px;
+  animation:
+    210ms ease-out 150ms both vtFade,
+    400ms ease-in-out both vtSlide;
+}
+
+@keyframes vtFade {
+  from {
+    opacity: 0;
+    filter: blur(4px);
+  }
+
+  to {
+    opacity: 1;
+    filter: blur(0);
+  }
+}
+
+@keyframes vtSlide {
+  from {
+    translate: var(--slide-offset);
+  }
+
+  to {
+    translate: 0;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   Responsive
+   -------------------------------------------------------------------------- */
+
+@media (max-width: 1080px) {
+
+  .shell--split,
+  .shell--split-wide {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  /* A sticky heading above a single column would sit on top of the content it
+     introduces. */
+  .split__head {
+    position: static;
+  }
 }
 
 @media (max-width: 900px) {
-  /* One column on a phone. Side placement would leave a measure too narrow to
-     read, and the frame is cover-fitted so its edges are cropped anyway —
-     the subject sits closer to the middle than it does on desktop. */
-  .scene {
-    padding: clamp(4.75rem, 12vh, 6rem) var(--gutter) clamp(6.5rem, 15vh, 8rem);
-    align-items: flex-end;
-    justify-content: flex-start;
+  .siteNav__links {
+    display: none;
   }
 
-  .scene__inner,
-  .scene--centered .scene__inner {
-    max-width: none;
-    text-align: left;
+  .siteNav__toggle {
+    display: grid;
   }
 
-  .scene--centered .scene__desc {
-    margin-inline: 0;
+  .siteNav__brand {
+    margin-right: auto;
   }
 
-  .scene__headline {
-    font-size: clamp(1.9rem, 8.5vw, 2.8rem);
+
+  .process__inner {
+    grid-template-columns: minmax(0, 1fr);
   }
 
-  .scene__desc {
-    max-width: 42ch;
+  /* Sticky as a compact bar rather than a column: the ring and the step name
+     stay visible while the steps scroll under them. */
+  .process__sticky {
+    top: 4.6rem;
+    grid-auto-flow: column;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: center;
+    gap: 0.9rem;
+    padding: 0.7rem 0.9rem;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--line);
+    background: rgba(7, 41, 74, 0.86);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+  }
+
+  .process__ring {
+    width: 52px;
+  }
+
+  .process__percent {
+    font-size: 0.78rem;
+  }
+
+  .process__counter,
+  .process__dots {
+    display: none;
+  }
+
+  .process__now .h3 {
+    font-size: 1.02rem;
+  }
+
+  .bento {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .bento__slot,
+  .bento__slot--tall {
+    grid-column: span 1;
+  }
+
+  .bento__slot--wide,
+  .bento__slot--full {
+    grid-column: span 2;
+  }
+
+  .footer__inner {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  /* Same arithmetic as the desktop value against the phone's 820vh film runway. */
+  :root {
+    --strip-runway: 170vh;
+  }
+
+  .strip__pin {
+    align-items: end;
+    padding-bottom: clamp(4rem, 12vh, 7rem);
+  }
+}
+
+@media (max-width: 680px) {
+  .form__grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .bento,
+  .bento__slot--wide,
+  .bento__slot--full {
+    grid-template-columns: minmax(0, 1fr);
+    grid-column: span 1;
+  }
+
+  .ctaBand {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .contactList li {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.1rem;
+  }
+
+  .footer__inner {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .table {
+    min-width: 26rem;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   Reduced motion — the site still works, it just stops moving
+   -------------------------------------------------------------------------- */
+
+@media (prefers-reduced-motion: reduce) {
+
+  /* Content swaps instantly instead of sliding, which is the browser's own
+     default behaviour without a transition. */
+  ::view-transition-old(*),
+  ::view-transition-new(*),
+  ::view-transition-group(*) {
+    animation-duration: 0s !important;
+    animation-delay: 0s !important;
+  }
+
+  .marquee__track {
+    animation: none;
+  }
+
+  /* Fading the stills in and out is motion in everything but name — it draws the
+     eye down the page as you scroll. Show them all, at full strength. */
+  .process__step,
+  .process__shot {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+
+  .strip__canvas,
+  .card,
+  .plan,
+  .btn,
+  .process__dot {
+    transition: none;
+  }
+
+  .card:hover,
+  .plan:hover,
+  .btn:hover {
+    transform: none;
+  }
+}
+
+/* Grid items are the revealed <li> wrappers, so the card inside has to stretch
+   to the row height or a two-up row ends up with two different card heights. */
+.cards>li,
+.plans>li {
+  display: grid;
+}
+
+.card {
+  height: 100%;
+}
+
+/* --------------------------------------------------------------------------
+   Glyph Portal host — the threshold between the film and the closing section
+
+   The component ships its own styles scoped with `:where(#id)`, which carries no
+   specificity, so these plain class selectors override it without !important.
+   That is by design on its part; the only rule not to touch is the margin-top on
+   [data-gp-content], which is the scroll spacer the whole effect is measured from.
+   -------------------------------------------------------------------------- */
+
+.portal {
+  position: relative;
+  z-index: 1;
+}
+
+/* HomeOutro is a full `.section` with its own rhythm, so the portal's content box
+   gives up its padding and its vertical centring rather than adding a second one. */
+.portal [data-gp-content] {
+  padding: 0;
+  align-content: start;
+}
+
+.portal__still {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  /* The component drives this custom property from scroll position; following it
+     means the backdrop pushes in with the camera instead of sitting still. */
+  transform: scale(var(--gp-field-scale, 1));
+}
+
+.portal__scrim {
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(to bottom, rgba(7, 41, 74, 0.35) 0%, rgba(7, 41, 74, 0.82) 62%, rgba(7, 41, 74, 0.94) 100%),
+    linear-gradient(to right, rgba(7, 41, 74, 0.6) 0%, rgba(7, 41, 74, 0.15) 50%, rgba(7, 41, 74, 0.6) 100%);
+}
+
+/* Both lines hang off the measured ink, not off guessed percentages: the component
+   publishes --gp-word-top and --gp-word-bottom once it has measured the glyphs. */
+.portal__eyebrow {
+  position: absolute;
+  inset: auto var(--gutter) calc(100% - var(--gp-word-top, 35%) + 1.75rem);
+  margin: 0;
+  text-align: center;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+.portal__support {
+  position: absolute;
+  inset: calc(var(--gp-word-bottom, 50%) + 1.75rem) var(--gutter) auto;
+  margin: 0;
+  text-align: center;
+  font-size: 0.95rem;
+  color: var(--ink-soft);
+}
+
+/* No pointer means no hover-to-choose, and the component shows its own select
+   control instead — so the instruction has to stop naming a gesture nobody has. */
+@media (any-pointer: coarse) {
+  .portal__support {
+    visibility: hidden;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  /* SceneText already stops the travel; this covers the pre-paint state so a
-     word is never left parked 40px low. */
-  .scene__word {
+  .portal__still {
     transform: none;
   }
+
+  .portal__eyebrow,
+  .portal__support {
+    position: static;
+    inset: auto;
+    margin: 0 auto;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   Scroll chapters — the homepage, one phase at a time
+
+   Each chapter is a tall block with a pinned viewport inside it. The height
+   comes from `config/chapters.ts` as an inline style, derived from how many
+   frames that chapter has to play, so every chapter scrubs at the same speed.
+
+   Nothing in here transitions. Everything that moves is driven by a motion value
+   written straight to the element by `ScrollChapter`, and a CSS transition on top
+   of that would fight the scrub and lag the copy behind the picture.
+   -------------------------------------------------------------------------- */
+
+.chapter {
+  position: relative;
+  z-index: 1;
+  /* height comes from the inline style */
+}
+
+.chapter__pin {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  height: 100svh;
+  overflow: clip;
+  display: grid;
+  align-items: center;
+  /* The captions' 3D tilt (`.chapter__copy`, in `HomeCaption.tsx`) needs this
+     ancestor to establish the depth. `SectionNav` is deliberately rendered
+     outside this element in `SinglePage.tsx` — see the comment there. */
+  perspective: 1400px;
+}
+
+.chapter__canvas {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  transition: opacity 800ms ease-out;
+  /* Feather the edges so each chapter sits inside the ambient blue rather than
+     ending on a hard rectangle. */
+  -webkit-mask-image: radial-gradient(ellipse 112% 112% at 50% 50%,
+      #000 64%,
+      rgba(0, 0, 0, 0) 100%);
+  mask-image: radial-gradient(ellipse 112% 112% at 50% 50%,
+      #000 64%,
+      rgba(0, 0, 0, 0) 100%);
+}
+
+.chapter__pin.is-ready .chapter__canvas {
+  opacity: 1;
+}
+
+/* The film's own captions live in the lower-left, and the chapter copy lands on
+   the right. The scrim deepens the right side so the copy has something to sit
+   on once it arrives, and lifts the bottom-left a little so the burned-in
+   caption keeps its contrast on the brighter shots. */
+.chapter__scrim {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(to left, rgba(7, 41, 74, 0.82) 0%, rgba(7, 41, 74, 0.1) 52%, rgba(7, 41, 74, 0) 72%),
+    linear-gradient(to top, rgba(7, 41, 74, 0.44) 0%, rgba(7, 41, 74, 0) 34%);
+}
+
+/* --- the ARRIVE beat ------------------------------------------------------ */
+
+.chapter__label {
+  position: absolute;
+  top: clamp(5.5rem, 14vh, 8rem);
+  left: 0;
+  right: 0;
+  z-index: 3;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  pointer-events: none;
+}
+
+.chapter__labelIndex {
+  display: grid;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 999px;
+  border: 1px solid rgba(143, 208, 245, 0.4);
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+}
+
+/* --- the READ beat -------------------------------------------------------- */
+
+.chapter__copy {
+  position: relative;
+  z-index: 4;
+  /* Every beat's copy lives in the same pin now (see `HomeCaption.tsx`), so
+     they all have to land in the same grid cell to cross-fade in place
+     instead of stacking one below the next. */
+  grid-area: 1 / 1;
+  justify-self: end;
+  align-self: center;
+  width: min(100%, 34rem);
+  margin-inline: auto;
+  margin-right: 0;
+  padding-inline: var(--gutter);
+  display: grid;
+  gap: 0.9rem;
+  justify-items: start;
+  /* Same recipe as the footer's reveal (`FooterReveal.tsx`): tilts up from
+     its own bottom edge rather than its center, so it reads as rising into
+     place instead of just scaling in. */
+  transform-origin: bottom center;
+  will-change: transform, opacity;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chapter__copy {
+    transform: none !important;
+  }
+}
+
+/* Hold the copy column inside the page's container rather than letting it run
+   to the viewport edge on a wide screen. */
+@media (min-width: 1200px) {
+  .chapter__copy {
+    width: min(38rem, calc((100vw - var(--shell)) / 2 + 38rem));
+    padding-right: max(var(--gutter), calc((100vw - var(--shell)) / 2));
+  }
+}
+
+.chapter__eyebrow {
+  margin: 0;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+.chapter__title {
+  margin: 0;
+  font-family: var(--font-outfit), system-ui, sans-serif;
+  font-size: clamp(1.9rem, 3.6vw, 3rem);
+  font-weight: 600;
+  line-height: 1.06;
+  letter-spacing: -0.025em;
+  text-wrap: balance;
+}
+
+.chapter__lede {
+  margin: 0;
+  max-width: 42ch;
+  font-size: clamp(0.95rem, 1.3vw, 1.08rem);
+  line-height: 1.65;
+  color: var(--ink-soft);
+}
+
+.chapter__points {
+  list-style: none;
+  display: grid;
+  gap: 0.5rem;
+  margin: 0.35rem 0 0.5rem;
+  padding: 0;
+}
+
+.chapter__points li {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.55rem;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  color: var(--ink-soft);
+}
+
+.chapter__points svg {
+  flex: 0 0 auto;
+  margin-top: 0.24rem;
+  color: var(--accent);
+}
+
+/* --------------------------------------------------------------------------
+   Responsive — the copy moves off the side and onto the bottom
+   -------------------------------------------------------------------------- */
+
+@media (max-width: 900px) {
+  .chapter__pin {
+    align-items: end;
+  }
+
+  .chapter__copy {
+    justify-self: stretch;
+    width: 100%;
+    margin-right: auto;
+    padding-bottom: clamp(3rem, 9vh, 5rem);
+    gap: 0.75rem;
+  }
+
+  /* Vertical, not horizontal: on a phone the frame is cropped hard at the sides
+     and there is no side of it left to put a column on. */
+  .chapter__scrim {
+    background:
+      linear-gradient(to top, rgba(7, 41, 74, 0.9) 0%, rgba(7, 41, 74, 0.45) 40%, rgba(7, 41, 74, 0) 68%),
+      linear-gradient(to bottom, rgba(7, 41, 74, 0.5) 0%, rgba(7, 41, 74, 0) 24%);
+  }
+
+  .chapter__label {
+    top: clamp(4.5rem, 11vh, 6rem);
+  }
+
+  .chapter__lede {
+    font-size: 0.92rem;
+  }
+
+  /* Three bullets plus a heading plus a button is more than a short viewport can
+     hold above the fold. The bullets are the part the lede already summarises. */
+  .chapter__points {
+    display: none;
+  }
+}
+
+@media (min-width: 901px) and (max-height: 620px) {
+  .chapter__points {
+    display: none;
+  }
+
+  .chapter__label {
+    top: 4.75rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chapter__canvas {
+    transition: none;
+  }
+}
+
+/* Tabbing to a chapter's CTA reveals that chapter, rather than moving focus to
+   something invisible. !important because it overrides the inline opacity and
+   transform Motion writes from the scroll position — the one case the keyword
+   is genuinely for. */
+.chapter__copy:focus-within {
+  opacity: 1 !important;
+  transform: none !important;
+}
+
+/* ==========================================================================
+   SINGLE PAGE & PRICING CARDS STYLES
+   ========================================================================== */
+
+.singlePageContainer {
+  position: relative;
+  width: 100%;
+}
+
+.singlePageSection {
+  position: relative;
+}
+
+/* Indicator-free Section Navigation */
+.singlePageNav {
+  position: fixed;
+  right: 1.5rem;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 70;
+  display: flex;
+  flex-direction: column;
+}
+
+.singlePageNav__list {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.singlePageNav__item {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.25rem;
+  color: var(--ink-muted, rgba(255, 255, 255, 0.6));
+  transition: color 0.3s ease;
+}
+
+.singlePageNav__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  transition: all 0.3s ease;
+}
+
+.singlePageNav__label {
+  font-size: 0.75rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  opacity: 0;
+  transform: translateX(10px);
+  transition: all 0.3s ease;
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+.singlePageNav__item:hover .singlePageNav__dot,
+.singlePageNav__item.is-active .singlePageNav__dot {
+  background: var(--blue-400, #38bdf8);
+  border-color: var(--blue-400, #38bdf8);
+  box-shadow: 0 0 10px rgba(56, 189, 248, 0.6);
+  transform: scale(1.4);
+}
+
+.singlePageNav__item:hover .singlePageNav__label,
+.singlePageNav__item.is-active .singlePageNav__label {
+  opacity: 1;
+  transform: translateX(0);
+  color: #fff;
+}
+
+@media (max-width: 768px) {
+  .singlePageNav {
+    display: none;
+  }
+}
+
+/* Pricing Cards Centered & Bottom-to-Top Animation */
+.pricingCardsContainer {
+  margin-top: 2rem;
+  width: 100%;
+}
+
+.pricingCardsGrid {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: stretch;
+  gap: 1.5rem;
+  max-width: 1100px;
+  margin: 0 auto;
+}
+
+.pricingCard {
+  position: relative;
+  flex: 1 1 280px;
+  max-width: 340px;
+  background: rgba(15, 23, 42, 0.75);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 20px;
+  padding: 2rem 1.5rem;
+  display: flex;
+  flex-direction: column;
+  transition: transform 0.35s ease, border-color 0.35s ease, box-shadow 0.35s ease;
+}
+
+.pricingCard:hover {
+  transform: translateY(-6px);
+  border-color: rgba(56, 189, 248, 0.4);
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4), 0 0 20px rgba(56, 189, 248, 0.15);
+}
+
+.pricingCard--popular {
+  border-color: rgba(56, 189, 248, 0.6);
+  background: rgba(14, 30, 60, 0.85);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.3), 0 0 15px rgba(56, 189, 248, 0.2);
+}
+
+.pricingCard__badge {
+  position: absolute;
+  top: -12px;
+  right: 20px;
+  background: linear-gradient(135deg, #0ea5e9, #3b82f6);
+  color: #ffffff;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  padding: 0.3rem 0.8rem;
+  border-radius: 20px;
+  box-shadow: 0 4px 12px rgba(14, 165, 233, 0.4);
+}
+
+.pricingCard__header {
+  margin-bottom: 1.25rem;
+}
+
+.pricingCard__title {
+  font-size: 1.35rem;
+  font-weight: 700;
+  color: #ffffff;
+  margin-bottom: 0.35rem;
+}
+
+.pricingCard__tagline {
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.65);
+  line-height: 1.4;
+}
+
+.pricingCard__priceRow {
+  display: flex;
+  align-items: baseline;
+  gap: 0.35rem;
+  margin-bottom: 1.5rem;
+  padding-bottom: 1.25rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.pricingCard__price {
+  font-size: 2.25rem;
+  font-weight: 800;
+  color: #ffffff;
+  letter-spacing: -0.02em;
+}
+
+.pricingCard__period {
+  font-size: 0.9rem;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.pricingCard__features {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 1.75rem 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  flex: 1;
+}
+
+.pricingCard__feature {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  font-size: 0.88rem;
+  color: rgba(255, 255, 255, 0.85);
+  line-height: 1.4;
+}
+
+.pricingCard__check {
+  color: #38bdf8;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.pricingCard__cta {
+  width: 100%;
+  margin-top: auto;
+  text-align: center;
+  justify-content: center;
+}
+
+/* Contact Section Styling */
+.singlePageContactArea {
+  position: relative;
+  background: var(--surface-dark, #07294a);
+  padding: 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.contactInline {
+  max-width: 1000px;
+  margin: 0 auto;
+}
+
+.contactInline__grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 3rem;
+  align-items: start;
+}
+
+@media (max-width: 860px) {
+  .contactInline__grid {
+    grid-template-columns: 1fr;
+    gap: 2.5rem;
+  }
+}
+
+.contactInline__info h3 {
+  font-size: 1.8rem;
+  font-weight: 700;
+  color: #ffffff;
+  margin-bottom: 1rem;
+}
+
+.contactInline__details {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  margin-top: 2rem;
+}
+
+.contactDetailItem {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  background: rgba(255, 255, 255, 0.04);
+  padding: 1rem 1.25rem;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.contactDetailIcon {
+  font-size: 1.5rem;
+}
+
+.contactDetailItem strong {
+  display: block;
+  font-size: 0.95rem;
+  color: #ffffff;
+}
+
+.contactDetailItem p {
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.65);
+  margin: 0;
+}
+
+.contactInline__formWrap {
+  background: rgba(15, 23, 42, 0.9);
+  backdrop-filter: blur(20px);
+  padding: 2rem;
+  border-radius: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 15px 35px rgba(0, 0, 0, 0.4);
+}
+
+.contactInline__form {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.formGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.formGroup label {
+  font-size: 0.82rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: rgba(255, 255, 255, 0.75);
+}
+
+.formGroup input {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  padding: 0.75rem 1rem;
+  color: #ffffff;
+  font-size: 0.95rem;
+  outline: none;
+  transition: border-color 0.25s ease;
+}
+
+.formGroup input:focus {
+  border-color: #38bdf8;
+  box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.2);
+}
+
+.contactInline__success {
+  text-align: center;
+  padding: 2rem 1rem;
+}
+
+.successIcon {
+  width: 54px;
+  height: 54px;
+  background: #10b981;
+  color: #fff;
+  font-size: 1.6rem;
+  font-weight: 700;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 1.25rem auto;
+}
+
+/* ==========================================================================
+   3D WASHING MACHINE ANIMATED LOADER
+   ========================================================================== */
+
+.washer3dContainer {
+  margin-bottom: 1.5rem;
+  perspective: 1000px;
+  display: flex;
+  justify-content: center;
+}
+
+.washer3d {
+  width: 140px;
+  height: 165px;
+  position: relative;
+  transform-style: preserve-3d;
+  transform: rotateX(8deg) rotateY(-8deg);
+  transition: transform 0.4s ease;
+}
+
+.washer3d:hover {
+  transform: rotateX(0deg) rotateY(0deg) scale(1.05);
+}
+
+.washer3d__body {
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(145deg, #1e293b, #0f172a);
+  border-radius: 18px;
+  border: 2px solid rgba(255, 255, 255, 0.15);
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.6), inset 0 2px 4px rgba(255, 255, 255, 0.2), 0 0 25px rgba(56, 189, 248, 0.2);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 0.6rem;
+  position: relative;
+}
+
+.washer3d__panel {
+  width: 100%;
+  height: 32px;
+  background: rgba(15, 23, 42, 0.9);
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 0.5rem;
+}
+
+.washer3d__knob {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: radial-gradient(circle, #64748b, #334155);
+  border: 1.5px solid #94a3b8;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: knobRotate 4s linear infinite;
+}
+
+.washer3d__knobDot {
+  width: 3px;
+  height: 3px;
+  background: #38bdf8;
+  border-radius: 50%;
+  transform: translateY(-4px);
+}
+
+.washer3d__display {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.washer3d__status {
+  font-size: 0.5rem;
+  font-weight: 700;
+  color: #38bdf8;
+  letter-spacing: 0.05em;
+}
+
+.washer3d__timer {
+  font-size: 0.55rem;
+  font-weight: 600;
+  color: #10b981;
+  font-family: monospace;
+}
+
+.washer3d__buttons {
+  display: flex;
+  gap: 3px;
+}
+
+.washer3d__btn {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #475569;
+}
+
+.washer3d__btn--active {
+  background: #38bdf8;
+  box-shadow: 0 0 6px #38bdf8;
+}
+
+.washer3d__doorRing {
+  width: 105px;
+  height: 105px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #475569, #0f172a);
+  border: 3px solid rgba(255, 255, 255, 0.2);
+  margin-top: 0.5rem;
+  padding: 4px;
+  box-shadow: inset 0 4px 8px rgba(0, 0, 0, 0.5), 0 0 15px rgba(14, 165, 233, 0.3);
+  position: relative;
+}
+
+.washer3d__doorGlass {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  background: radial-gradient(circle at 30% 30%, rgba(56, 189, 248, 0.3), rgba(15, 23, 42, 0.95));
+  position: relative;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+.washer3d__drum {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  position: relative;
+  animation: spinDrum 2.4s linear infinite;
+}
+
+.washer3d__baffle {
+  position: absolute;
+  width: 6px;
+  height: 24px;
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 3px;
+  top: 50%;
+  left: 50%;
+}
+
+.washer3d__baffle--1 {
+  transform: translate(-50%, -50%) rotate(0deg) translateY(-32px);
+}
+
+.washer3d__baffle--2 {
+  transform: translate(-50%, -50%) rotate(120deg) translateY(-32px);
+}
+
+.washer3d__baffle--3 {
+  transform: translate(-50%, -50%) rotate(240deg) translateY(-32px);
+}
+
+.washer3d__clothes {
+  position: absolute;
+  border-radius: 40%;
+  filter: blur(0.5px);
+  opacity: 0.85;
+}
+
+.washer3d__clothes--blue {
+  width: 28px;
+  height: 28px;
+  background: #0284c7;
+  top: 25%;
+  left: 25%;
+}
+
+.washer3d__clothes--white {
+  width: 24px;
+  height: 24px;
+  background: #f8fafc;
+  bottom: 20%;
+  right: 25%;
+}
+
+.washer3d__clothes--cyan {
+  width: 22px;
+  height: 22px;
+  background: #06b6d4;
+  top: 35%;
+  right: 20%;
+}
+
+.washer3d__water {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 45%;
+  background: rgba(14, 165, 233, 0.4);
+  border-radius: 0 0 50px 50px;
+  animation: waterWave 1.8s ease-in-out infinite alternate;
+}
+
+.washer3d__bubble {
+  position: absolute;
+  background: rgba(255, 255, 255, 0.6);
+  border-radius: 50%;
+  animation: bubbleRise 2s infinite ease-in;
+}
+
+.washer3d__bubble--1 { width: 5px; height: 5px; left: 30%; bottom: 10%; animation-delay: 0s; }
+.washer3d__bubble--2 { width: 7px; height: 7px; left: 55%; bottom: 15%; animation-delay: 0.4s; }
+.washer3d__bubble--3 { width: 4px; height: 4px; left: 70%; bottom: 5%; animation-delay: 0.8s; }
+.washer3d__bubble--4 { width: 6px; height: 6px; left: 40%; bottom: 20%; animation-delay: 1.2s; }
+
+.washer3d__bottomDrawer {
+  width: 80%;
+  height: 2px;
+  background: rgba(255, 255, 255, 0.1);
+  position: absolute;
+  bottom: 8px;
+}
+
+@keyframes spinDrum {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes knobRotate {
+  0% { transform: rotate(0deg); }
+  50% { transform: rotate(180deg); }
+  100% { transform: rotate(360deg); }
+}
+
+@keyframes waterWave {
+  0% { transform: scaleY(0.9) skewX(-4deg); }
+  100% { transform: scaleY(1.1) skewX(4deg); }
+}
+
+@keyframes bubbleRise {
+  0% { transform: translateY(0) scale(0.6); opacity: 0; }
+  50% { opacity: 0.8; }
+  100% { transform: translateY(-40px) scale(1.2); opacity: 0; }
+}
+
+/* ==========================================================================
+   PROCESS DIRECT CARDS (WITHOUT SHOW MORE)
+   ========================================================================== */
+
+.processDirectList {
+  margin-top: 1.75rem;
+  width: 100%;
+}
+
+.processDirectTitle {
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: #ffffff;
+  margin-bottom: 1rem;
+  letter-spacing: -0.01em;
+}
+
+.processGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 1rem;
+}
+
+.processCard {
+  background: rgba(15, 23, 42, 0.7);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  padding: 1rem 1.15rem;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.85rem;
+  transition: transform 0.25s ease, border-color 0.25s ease;
+}
+
+.processCard:hover {
+  transform: translateY(-3px);
+  border-color: rgba(56, 189, 248, 0.4);
+}
+
+.processCard__num {
+  font-size: 0.85rem;
+  font-weight: 800;
+  color: #38bdf8;
+  background: rgba(56, 189, 248, 0.12);
+  padding: 0.25rem 0.5rem;
+  border-radius: 6px;
+  flex-shrink: 0;
+}
+
+.processCard strong {
+  display: block;
+  font-size: 0.92rem;
+  color: #ffffff;
+  margin-bottom: 0.2rem;
+}
+
+.processCard p {
+  font-size: 0.8rem;
+  color: rgba(255, 255, 255, 0.65);
+  margin: 0;
+  line-height: 1.35;
+}
+
+/* ==========================================================================
+   RESPONSIVE OVERRIDES (MOBILE & TABLET) — PRESERVING DESKTOP VIEW
+   ========================================================================== */
+
+@media (max-width: 1024px) {
+  .chapter__copy {
+    max-width: 90%;
+    padding: 1.5rem;
+  }
+
+  .processGrid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .contactInline__grid {
+    grid-template-columns: 1fr;
+    gap: 2rem;
+  }
+}
+
+@media (max-width: 640px) {
+  .chapter__title {
+    font-size: 1.85rem;
+    line-height: 1.2;
+  }
+
+  .chapter__lede {
+    font-size: 0.95rem;
+  }
+
+  .processGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .pricingCardsGrid {
+    flex-direction: column;
+    align-items: center;
+  }
+
+  .pricingCard {
+    width: 100%;
+    max-width: 100%;
+  }
+
+  .washer3d {
+    width: 110px;
+    height: 130px;
+  }
+
+  .washer3d__doorRing {
+    width: 80px;
+    height: 80px;
+  }
+}
+
+/* ==========================================================================
+   RESPONSIVE PADDING BREAKPOINTS (PX-4 MOBILE, PX-6 TABLET)
+   ========================================================================== */
+
+/* Tablet View (641px - 1024px): px-6 (1.5rem / 24px) */
+@media (min-width: 641px) and (max-width: 1024px) {
+  :root {
+    --gutter: 1.5rem;
+  }
+
+  .siteNav__inner {
+    padding-left: 1.5rem !important;
+    padding-right: 1.5rem !important;
+  }
+
+  .shell {
+    padding-left: 1.5rem !important;
+    padding-right: 1.5rem !important;
+  }
+
+  .chapter__copy {
+    padding-left: 1.5rem !important;
+    padding-right: 1.5rem !important;
+  }
+
+  .singlePageContactArea {
+    padding-left: 1.5rem !important;
+    padding-right: 1.5rem !important;
+  }
+}
+
+/* Mobile View (up to 640px): px-4 (1rem / 16px) & space-around nav */
+@media (max-width: 640px) {
+  :root {
+    --gutter: 1rem;
+  }
+
+  .siteNav__inner {
+    padding-left: 1rem !important;
+    padding-right: 1rem !important;
+    justify-content: space-around !important;
+    gap: 0.5rem;
+  }
+
+  .siteNav__cta {
+    display: none !important;
+  }
+
+  .siteNav__toggle {
+    display: grid !important;
+  }
+
+  .shell {
+    padding-left: 1rem !important;
+    padding-right: 1rem !important;
+  }
+
+  .chapter__copy {
+    padding-left: 1rem !important;
+    padding-right: 1rem !important;
+  }
+
+  .singlePageContactArea {
+    padding-left: 1rem !important;
+    padding-right: 1rem !important;
+  }
+}
+
+.sheet__brandWrap {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.sheet__actionWrap {
+  margin-top: 1.25rem;
+  padding-top: 1rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.sheet__ctaBtn {
+  width: 100%;
+  text-align: center;
+  justify-content: center;
 }

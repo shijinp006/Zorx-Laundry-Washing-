@@ -10,215 +10,275 @@ import {
   ReactNode,
 } from "react";
 import { useLenis } from "lenis/react";
-import { clamp } from "@/lib/story";
+import type LenisInstance from "lenis";
+import { FrameRange, FULL_RANGE } from "@/lib/frameLoader";
+import { clamp, frameFromProgress } from "@/lib/story";
 
-type Subscriber = (progress: number) => void;
+/**
+ * SCROLL → Lenis's own raf tick → progress → frame → canvas / DOM.
+ *
+ * One loop, not two. Lenis already runs `requestAnimationFrame` to smooth the
+ * scroll position (`autoRaf`, on by default); this stage measures itself once,
+ * then recomputes `progress` and `frame` from inside the `"scroll"` event Lenis
+ * emits at the end of that same tick. Nothing here starts a second scheduler to
+ * go read the result back out a frame later — the previous version used
+ * Framer Motion's `useScroll`/`useTransform`, which runs its own independent
+ * frame loop and, being a separate scheduler, could read the position Lenis had
+ * computed on the *previous* tick. One frame of drift is not much on its own,
+ * but it is one more thing fighting the canvas for the scroll's meaning, and it
+ * is not needed: Lenis already knows the number the instant it changes.
+ *
+ * A `ScrollValue` (below) replaces the `MotionValue` a consumer used to read.
+ * It is a plain, dependency-free pub-sub: `set` runs its listeners
+ * synchronously, in the same call stack as the Lenis tick, so a subscriber's
+ * canvas draw or style write happens in the same frame the scroll moved in —
+ * not the next one Motion's own loop gets around to.
+ */
+export interface ScrubPhase {
+  /** Progress at which the frames start moving. */
+  start: number;
+  /** Progress at which they stop, holding the last frame from here on. */
+  end: number;
+}
+
+type Listener = (value: number) => void;
+
+/** A single live number, written once per Lenis tick and read by however many consumers need it. */
+export class ScrollValue {
+  private value: number;
+  private listeners = new Set<Listener>();
+
+  constructor(initial: number) {
+    this.value = initial;
+  }
+
+  get(): number {
+    return this.value;
+  }
+
+  set(next: number) {
+    this.value = next;
+    for (const listener of this.listeners) listener(next);
+  }
+
+  subscribe(fn: Listener): () => void {
+    this.listeners.add(fn);
+    return () => {
+      this.listeners.delete(fn);
+    };
+  }
+}
 
 interface ScrollEngineValue {
-  /** Register a per-frame listener. Returns an unsubscribe function. */
-  subscribe: (fn: Subscriber) => () => void;
+  /** 0 → 1 across this stage's runway. The value everything on the stage reads. */
+  progress: ScrollValue;
+  /** Continuous frame position inside `range`, derived from `progress`. */
+  frame: ScrollValue;
+  /** The slice of the film this stage scrubs. */
+  range: FrameRange;
+  /** Where in the scroll the frames move; held either side of it. */
+  phase: ScrubPhase;
   /** Read the latest progress without subscribing. */
   getProgress: () => number;
   /** Smoothly scroll so the runway sits at the given progress (0-1). */
   scrollToProgress: (progress: number, duration?: number) => void;
-  /** The tall element whose scroll range defines progress 0 → 1. */
-  stageRef: (el: HTMLElement | null) => void;
 }
 
 const ScrollEngineContext = createContext<ScrollEngineValue | null>(null);
 
 /**
- * SCROLL → Lenis → requestAnimationFrame → scroll progress 0-1.
+ * A tall element whose own scroll range defines progress 0 → 1 for everything
+ * pinned inside it — the canvas, the copy, the chapter rail. They stay in lock
+ * step because they all read the same two `ScrollValue`s, written from the same
+ * measurement in the same tick.
  *
- * Progress is computed once per tick from the smoothed Lenis position and
- * pushed to every subscriber. Consumers (canvas, text, nav) all read that one
- * value, which is what keeps the frame, the copy and the navigation locked to
- * each other.
- *
- * The publish happens inside Lenis's own scroll callback, not in a rAF loop of
- * our own. That matters for how tightly the picture tracks the scroll: Lenis
- * updates `lenis.scroll` inside its rAF, and a second independent rAF has no
- * ordering guarantee against it. Ours would in fact have been registered first
- * — React runs a child's effects before its parent's, and this provider is a
- * child of <ReactLenis> — so every tick read the position Lenis had computed on
- * the *previous* frame, leaving the canvas one frame behind the input.
- *
- * Reading from Lenis's callback removes the ordering question entirely: the
- * frame drawn is always the one for the scroll position of the frame being
- * drawn. Without Lenis (no instance yet, or a browser that never starts it) the
- * native scroll event drives the same publish through one coalescing rAF.
+ * The stage measures its own top offset and travel distance once (on mount and
+ * on resize) rather than every scroll tick, since that is the only part of this
+ * that needs layout: reading `getBoundingClientRect` on every Lenis tick would
+ * reintroduce a forced reflow into the one loop this exists to keep cheap.
  */
-export function ScrollEngineProvider({ children }: { children: ReactNode }) {
-  const lenisRef = useRef<ReturnType<typeof useLenis>>(undefined);
-
-  const stageElRef = useRef<HTMLElement | null>(null);
-  const subscribersRef = useRef<Set<Subscriber>>(new Set());
-  const progressRef = useRef(0);
-  // Cached geometry, so the rAF loop never reads layout (no thrashing).
-  const geometryRef = useRef({ top: 0, height: 0, viewport: 0 });
-
-  const currentScroll = useCallback(() => {
-    const l = lenisRef.current;
-    return typeof l?.scroll === "number" ? l.scroll : window.scrollY;
-  }, []);
-
+export function ScrollStage({
+  children,
+  className,
+  id,
+  range = FULL_RANGE,
+  phase,
+  mapFrame,
+  style,
+}: {
+  children: ReactNode;
+  className?: string;
+  id?: string;
+  /** Which frames this stage scrubs. Defaults to the whole film. */
+  range?: FrameRange;
+  /** Confine the scrub to part of the scroll, holding either side of it. */
+  phase?: ScrubPhase;
   /**
-   * Recompute progress and fan it out. `force` re-publishes an unchanged value,
-   * which is what geometry changes need — the scroll position can sit still
-   * while the runway's length under it changes.
+   * Override the built-in hold-scrub-hold mapping entirely, for a stage whose
+   * progress → frame curve is more than one hold-scrub-hold — a multi-section
+   * reel with its own beat per section, say. Must be referentially stable
+   * (wrap it in `useCallback`/module scope): like `phase`, its identity, not
+   * just its output, decides when the Lenis subscription below is rebuilt.
    */
-  const publish = useCallback(
-    (force = false) => {
-      const { top, height, viewport } = geometryRef.current;
-      const range = height - viewport;
-      const next = range > 0 ? clamp((currentScroll() - top) / range) : 0;
-
-      if (!force && next === progressRef.current) return;
-
-      progressRef.current = next;
-      subscribersRef.current.forEach((fn) => fn(next));
-    },
-    [currentScroll]
-  );
-
-  // Lenis drives the publish, so the value is always the current frame's.
-  const lenis = useLenis(
-    useCallback(
-      (instance) => {
-        lenisRef.current = instance;
-        publish();
-      },
-      [publish]
-    )
-  );
+  mapFrame?: (progress: number) => number;
+  style?: React.CSSProperties;
+}) {
+  const stageRef = useRef<HTMLDivElement>(null);
+  const lenis = useLenis();
+  const lenisRef = useRef(lenis);
   lenisRef.current = lenis;
 
-  const measure = useCallback(() => {
-    const el = stageElRef.current;
-    if (!el) return;
-    const rect = el.getBoundingClientRect();
-    geometryRef.current = {
-      top: rect.top + currentScroll(),
-      height: el.offsetHeight,
-      viewport: window.innerHeight,
-    };
-    // Re-publish: the same scroll position means a different progress once the
-    // runway's length has changed. Nothing else would resend it, because Lenis
-    // only ticks while the scroll is actually moving.
-    publish(true);
-  }, [currentScroll, publish]);
+  const { from, to } = range;
+  const isFullFilm = from === FULL_RANGE.from && to === FULL_RANGE.to;
+  const hasPhase = phase != null;
+  const scrubStart = phase?.start ?? 0;
+  const scrubEnd = phase?.end ?? 1;
 
-  const stageRef = useCallback(
-    (el: HTMLElement | null) => {
-      stageElRef.current = el;
-      if (el) measure();
+  // One ScrollValue pair per stage, for its whole lifetime — not re-created on
+  // a re-render, since consumers hold a subscription to the instance.
+  const progressValue = useRef<ScrollValue | null>(null);
+  if (!progressValue.current) progressValue.current = new ScrollValue(0);
+  const frameValue = useRef<ScrollValue | null>(null);
+  if (!frameValue.current) frameValue.current = new ScrollValue(from);
+
+  const toFrame = useCallback(
+    (p: number) => {
+      if (mapFrame) return mapFrame(p);
+      if (isFullFilm && !hasPhase) return frameFromProgress(p);
+      // Hold, scrub, hold. Clamping `t` is what produces the two holds: below
+      // `start` it pins to 0 and above `end` to 1, so the canvas simply keeps
+      // drawing the same frame while the rest of the section does its work.
+      const span = scrubEnd - scrubStart || 1;
+      const t = clamp((p - scrubStart) / span);
+      return from + t * (to - from);
     },
-    [measure]
+    // Depends on the phase's values, not the object reference — a caller that
+    // passes a fresh `{ start, end }` literal every render (several do) must
+    // not tear down and re-subscribe the Lenis listener below on every render.
+    [mapFrame, isFullFilm, hasPhase, scrubStart, scrubEnd, from, to]
   );
 
-  const subscribe = useCallback((fn: Subscriber) => {
-    subscribersRef.current.add(fn);
-    // Hand the new subscriber the current value immediately so it can paint
-    // correctly on mount instead of waiting a frame.
-    fn(progressRef.current);
-    return () => {
-      subscribersRef.current.delete(fn);
+  useEffect(() => {
+    const el = stageRef.current;
+    if (!el) return;
+
+    // "start start" → progress 0 when the stage's top reaches the viewport top;
+    // "end end" → progress 1 when its bottom reaches the viewport bottom. The
+    // travel is therefore the stage's height minus one viewport, which is
+    // exactly the distance a `position: sticky` child stays pinned for.
+    let top = 0;
+    let travel = 1;
+    const measure = () => {
+      const scrollNow = lenisRef.current?.scroll ?? window.scrollY;
+      const rect = el.getBoundingClientRect();
+      top = rect.top + scrollNow;
+      travel = Math.max(el.offsetHeight - window.innerHeight, 1);
     };
+
+    const apply = (scrollNow: number) => {
+      const p = clamp((scrollNow - top) / travel);
+      progressValue.current!.set(p);
+      frameValue.current!.set(toFrame(p));
+    };
+
+    measure();
+    apply(lenisRef.current?.scroll ?? window.scrollY);
+
+    const onResize = () => {
+      measure();
+      apply(lenisRef.current?.scroll ?? window.scrollY);
+    };
+    const observer = new ResizeObserver(onResize);
+    observer.observe(el);
+    window.addEventListener("resize", onResize);
+
+    // The one scroll loop: Lenis emits this from inside its own `raf`, after it
+    // has already moved the page for this tick — so `progress` and `frame`
+    // are current the instant a subscriber reads them, not a tick behind it.
+    const onScroll = (instance: LenisInstance) => apply(instance.scroll);
+    const unsubscribe = lenisRef.current?.on("scroll", onScroll);
+
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", onResize);
+      unsubscribe?.();
+    };
+    // Re-measure and re-subscribe if the stage's own frame mapping changes, or
+    // Lenis mounts after this effect's first run (it starts undefined).
+  }, [lenis, toFrame]);
+
+  const getProgress = useCallback(() => progressValue.current!.get(), []);
+
+  const scrollToProgress = useCallback((target: number, duration = 1.6) => {
+    const el = stageRef.current;
+    if (!el) return;
+    // Read layout at click time rather than caching it. This runs once per
+    // interaction, never in the scroll loop, so there is nothing to thrash.
+    const l = lenisRef.current;
+    const scroll = typeof l?.scroll === "number" ? l.scroll : window.scrollY;
+    const top = el.getBoundingClientRect().top + scroll;
+    const travel = Math.max(el.offsetHeight - window.innerHeight, 1);
+    const y = top + clamp(target) * travel;
+
+    if (l) l.scrollTo(y, { duration, lock: false });
+    else window.scrollTo({ top: y, behavior: "smooth" });
   }, []);
 
-  const getProgress = useCallback(() => progressRef.current, []);
-
-  const scrollToProgress = useCallback(
-    (progress: number, duration = 1.6) => {
-      const { top, height, viewport } = geometryRef.current;
-      const range = Math.max(height - viewport, 1);
-      const target = top + clamp(progress) * range;
-      const l = lenisRef.current;
-      if (l) {
-        l.scrollTo(target, { duration, lock: false });
-      } else {
-        window.scrollTo({ top: target, behavior: "smooth" });
-      }
-    },
-    []
-  );
-
-  // Keep cached geometry fresh.
-  useEffect(() => {
-    measure();
-
-    const onResize = () => measure();
-    window.addEventListener("resize", onResize);
-    window.addEventListener("orientationchange", onResize);
-
-    const observer = new ResizeObserver(onResize);
-    if (stageElRef.current) observer.observe(stageElRef.current);
-    observer.observe(document.documentElement);
-
-    // Fonts settling can change layout height slightly.
-    document.fonts?.ready.then(onResize).catch(() => {});
-
-    return () => {
-      window.removeEventListener("resize", onResize);
-      window.removeEventListener("orientationchange", onResize);
-      observer.disconnect();
-    };
-  }, [measure]);
-
-  /**
-   * Fallback for when there is no Lenis instance driving the publish. The
-   * scroll event can fire several times per frame, so it is coalesced into one
-   * rAF — the same SCROLL → rAF → progress path, just without the smoothing.
-   */
-  useEffect(() => {
-    if (lenis) return;
-
-    let raf = 0;
-    const onScroll = () => {
-      if (raf) return;
-      raf = requestAnimationFrame(() => {
-        raf = 0;
-        publish();
-      });
-    };
-
-    window.addEventListener("scroll", onScroll, { passive: true });
-    publish(true);
-
-    return () => {
-      window.removeEventListener("scroll", onScroll);
-      if (raf) cancelAnimationFrame(raf);
-    };
-  }, [lenis, publish]);
-
   const value = useMemo<ScrollEngineValue>(
-    () => ({ subscribe, getProgress, scrollToProgress, stageRef }),
-    [subscribe, getProgress, scrollToProgress, stageRef]
+    () => ({
+      progress: progressValue.current!,
+      frame: frameValue.current!,
+      range: { from, to },
+      phase: { start: scrubStart, end: scrubEnd },
+      getProgress,
+      scrollToProgress,
+    }),
+    [from, to, scrubStart, scrubEnd, getProgress, scrollToProgress]
   );
 
   return (
-    <ScrollEngineContext.Provider value={value}>
-      {children}
-    </ScrollEngineContext.Provider>
+    <div ref={stageRef} id={id} className={className} style={style}>
+      <ScrollEngineContext.Provider value={value}>
+        {children}
+      </ScrollEngineContext.Provider>
+    </div>
   );
 }
 
 export function useScrollEngine(): ScrollEngineValue {
   const ctx = useContext(ScrollEngineContext);
   if (!ctx) {
-    throw new Error("useScrollEngine must be used inside <ScrollEngineProvider>");
+    throw new Error("useScrollEngine must be used inside <ScrollStage>");
   }
   return ctx;
 }
 
 /**
- * Subscribe to progress without re-rendering. The callback runs on every
- * animation frame, so it should only write to refs or the DOM directly.
+ * Subscribe to a `ScrollValue` without re-rendering. The callback runs
+ * synchronously inside the `ScrollStage`'s Lenis `"scroll"` handler, so it
+ * should only write to refs or the DOM directly — the same contract
+ * `useMotionValueEvent` had, just off a plain subscription instead of a
+ * `MotionValue`.
+ *
+ * It also fires once on mount, so a consumer paints correctly straight away
+ * instead of waiting for the first scroll.
  */
-export function useScrollProgress(fn: Subscriber) {
-  const { subscribe } = useScrollEngine();
+function useValueSubscription(value: ScrollValue, fn: (v: number) => void) {
   const fnRef = useRef(fn);
   fnRef.current = fn;
 
-  useEffect(() => subscribe((p) => fnRef.current(p)), [subscribe]);
+  useEffect(() => {
+    fnRef.current(value.get());
+    return value.subscribe((v) => fnRef.current(v));
+  }, [value]);
+}
+
+/** Per-frame scroll progress (0-1) for this stage. */
+export function useScrollProgress(fn: (progress: number) => void) {
+  useValueSubscription(useScrollEngine().progress, fn);
+}
+
+/** Per-frame continuous frame position for this stage. */
+export function useScrollFrame(fn: (frame: number) => void) {
+  useValueSubscription(useScrollEngine().frame, fn);
 }

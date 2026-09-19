@@ -4,20 +4,48 @@
  * Everything — the canvas frame, the text beats and the navigation state — is
  * derived from one number: `progress` (0 → 1 across the scroll runway).
  *
- * The frame sequence was extracted from the Wash Zone commercial (239 frames,
- * 1280x720, 24fps). The chapter/beat boundaries below map to what is actually
- * happening on screen in those frames.
+ * The frame sequence is extracted from the Wash Zone commercial
+ * (`public/video/new video .MOV`, v3 — a re-render of the same shots and cuts
+ * as the earlier `IMG_2305.MOV` source, minus its burned-in captions): 900
+ * source frames at 1920x1080 and 30fps, decimated to every second frame and
+ * scaled to 1280x720, giving 450 frames at an effective 15fps. See
+ * `scripts/extract-frames.ps1` for why the rate comes down before the quality
+ * does.
  *
- * The source video opens on a storyboard contact sheet — a grid of all the
- * shots with numbered captions — which is not part of the footage. It is
- * dropped at extraction (`extract-frames.ps1 -TrimStart 1`), so frame 1 here is
- * the first real shot and the sequence is 239 frames, not the video's 240.
+ * Because v3 matches the old source frame-for-frame in timing, every cut point
+ * and chapter/section boundary tuned against v2 still lands correctly — only
+ * the picture changed, not the numbering.
+ *
+ * Frame `k` here is source frame `2k - 1`. That matters when reading a cut list
+ * off the source with FFmpeg scene detection: halve and round up.
+ *
+ * The clip opens straight on the booking shot, so nothing is trimmed and frame 1
+ * is the first real frame (the previous clip opened on a storyboard contact
+ * sheet and needed `-TrimStart 1`).
  */
 
-export const TOTAL_FRAMES = 239;
+export const TOTAL_FRAMES = 450;
 
 /** Path + naming of the extracted frame sequence in /public. */
-export const FRAME_PATH = "/frames/frame-";
+/**
+ * Cache-busting version for the frame sequence. **Bump this on every
+ * re-extraction.**
+ *
+ * `next.config.mjs` serves `/frames/` with `max-age=31536000, immutable`, which
+ * is what lets a returning visitor scrub the whole film with no network at all.
+ * The cost is that a frame URL can never change meaning: `immutable` tells the
+ * browser not even to revalidate, so re-extracting over the same filenames
+ * leaves everyone who has already visited watching the old footage for a year,
+ * with no way to notice and nothing to do about it short of clearing site data.
+ *
+ * That is not hypothetical — it happened here. The 30-second film was extracted
+ * over the 10-second one's filenames and the page carried on playing the old
+ * commercial from cache. Making the version part of the path means new frames
+ * get new URLs and the superseded ones simply expire unused.
+ */
+export const FRAME_VERSION = "v3";
+
+export const FRAME_PATH = `/frames/${FRAME_VERSION}/frame-`;
 export const FRAME_EXT = ".webp";
 export const FRAME_PAD = 5;
 
@@ -59,33 +87,41 @@ export interface Chapter {
 }
 
 /**
- * Chapters sit on the film's real cuts, found with FFmpeg scene detection
- * (frames 29, 48, 60, 90, 119, 134, 151, 167, 190, 211, 227):
+ * Chapters sit on the film's real cuts, found with FFmpeg scene detection over
+ * the source and converted to this sequence's numbering:
  *
- *   1-28     she books the pickup on her phone
- *   29-59    the van heads out and pulls up
- *   60-118   the bag is handed over, then carried to the plant
- *   119-189  sorting, the wash drum, the crate, the press
- *   190-210  folded stacks loaded into the van
- *   211-239  delivered at her door, closing brand lockup
+ *   ffmpeg -i "public/video/IMG_2305.MOV" \
+ *     -vf "select='gt(scene,0.12)',metadata=print" -f null -
  *
- * These replaced ranges inherited from a different edit of the film (1-17,
- * 17-52, 52-119, 119-214, 214-239), which is why the nav used to highlight
- * `process` while the doorstep hand-over was on screen: the labels no longer
- * described the frames underneath them.
+ * which found cuts at source frames 42, 91, 96, 166, 241, 301, 316, 387, 436,
+ * 451, 481, 511, 526, 584, 601, 736, 781, 809 and 839 — here 22, 46, 49, 84,
+ * 121, 151, 159, 194, 219, 226, 241, 256, 264, 293, 301, 369, 391, 405 and 420.
+ *
+ * Every boundary below is one of those, so a chapter change always lands on a
+ * real edit rather than mid-shot:
+ *
+ *   1-45     she books the pickup on her phone
+ *   46-120   the van heads out, along the road, and pulls up
+ *   121-195  the bag is handed over, received and driven away
+ *   196-300  sorting, the wash drum, the tunnel, the press
+ *   301-390  folded, packed and bagged
+ *   391-450  delivered at her door at night
+ *
+ * The 239-frame ranges these replaced belong to a completely different, shorter
+ * edit of the commercial and described shots that no longer exist.
  */
 const RAW_CHAPTERS: Omit<Chapter, "start" | "end" | "weight">[] = [
-  { id: "home", label: "Home", from: 1, to: 29, landingFrame: 12 },
-  { id: "about", label: "About", from: 29, to: 60, landingFrame: 48 },
-  { id: "pickup", label: "Pickup", from: 60, to: 119, landingFrame: 74 },
-  { id: "process", label: "Process", from: 119, to: 190, landingFrame: 126 },
-  { id: "product", label: "Product", from: 190, to: 211, landingFrame: 200 },
+  { id: "home", label: "Home", from: 1, to: 46, landingFrame: 20 },
+  { id: "about", label: "About", from: 46, to: 121, landingFrame: 75 },
+  { id: "pickup", label: "Pickup", from: 121, to: 196, landingFrame: 140 },
+  { id: "process", label: "Process", from: 196, to: 301, landingFrame: 240 },
+  { id: "product", label: "Product", from: 301, to: 391, landingFrame: 375 },
   {
     id: "contact",
     label: "Contact",
-    from: 211,
+    from: 391,
     to: TOTAL_FRAMES,
-    landingFrame: 220,
+    landingFrame: 428,
   },
 ];
 
@@ -141,6 +177,31 @@ export const CHAPTERS: Chapter[] = (() => {
 
 export const clamp = (v: number, min = 0, max = 1) =>
   v < min ? min : v > max ? max : v;
+
+/**
+ * Piecewise-linear interpolation, clamped at the ends — the same mapping
+ * `useTransform` did when a `MotionValue` drove these styles. Kept as a plain
+ * function so a scroll-linked style can be written straight to the DOM inside
+ * the same Lenis tick that computed `progress`, instead of handing the number
+ * to a second, independent scheduler.
+ */
+export function mapRange(
+  value: number,
+  input: number[],
+  output: number[]
+): number {
+  const last = input.length - 1;
+  if (value <= input[0]) return output[0];
+  if (value >= input[last]) return output[last];
+  for (let i = 0; i < last; i++) {
+    if (value >= input[i] && value <= input[i + 1]) {
+      const span = input[i + 1] - input[i] || 1;
+      const t = (value - input[i]) / span;
+      return output[i] + t * (output[i + 1] - output[i]);
+    }
+  }
+  return output[last];
+}
 
 /**
  * Progress (0-1) → continuous frame position (1 → TOTAL_FRAMES).

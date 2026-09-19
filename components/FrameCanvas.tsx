@@ -2,30 +2,37 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { FrameLoader } from "@/lib/frameLoader";
-import { TOTAL_FRAMES, frameFromProgress } from "@/lib/story";
-import { useScrollEngine, useScrollProgress } from "./ScrollEngine";
+import { useScrollEngine, useScrollFrame } from "./ScrollEngine";
+import WashingMachine3D from "@/components/ui/WashingMachine3D";
 
 /** Cap the backing store at 2x — beyond that costs memory for no visible gain. */
 const MAX_DPR = 2;
 
 /**
- * scroll progress → frame calculation → Canvas.
+ * frame `ScrollValue` → Canvas.
  *
- * Redraws only when the resolved frame index actually changes, so a still
- * scroll position costs nothing and a moving one stays on the compositor's
- * budget. The image is cover-fitted in device pixels for a sharp result on
- * high-DPI screens.
+ * `ScrollStage` has already turned the scroll position into a continuous frame
+ * position, computed inside Lenis's own scroll tick; this only has to round it
+ * and draw. Redraws happen only when the resolved frame index actually changes,
+ * so a still scroll position costs nothing and a moving one stays on the
+ * compositor's budget. The image is cover-fitted in device pixels for a sharp
+ * result on high-DPI screens.
  *
  * Two things can make the canvas stale, and only one of them is scrolling:
  * a frame finishing its decode, or the backing store being resized, both of
- * which happen while the scroll sits still. The engine only ticks while the
- * scroll is moving, so those cases schedule their own redraw against the last
- * published progress rather than waiting for the next scroll.
+ * which happen while the scroll sits still. `ScrollValue` only notifies on
+ * `set`, so those cases schedule their own redraw against the last published
+ * frame rather than waiting for the next scroll.
  */
 export default function FrameCanvas({
   onReady,
+  showLoader = true,
+  className = "stage__canvas",
 }: {
-  onReady: (ready: boolean) => void;
+  onReady?: (ready: boolean) => void;
+  /** The full-screen loading card. Off for the short strips on inner pages. */
+  showLoader?: boolean;
+  className?: string;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const loaderRef = useRef<FrameLoader | null>(null);
@@ -43,13 +50,13 @@ export default function FrameCanvas({
   /** Guards the reveal so it fires once, from inside the draw. */
   const revealedRef = useRef(false);
 
-  const { getProgress } = useScrollEngine();
-  const getProgressRef = useRef(getProgress);
-  getProgressRef.current = getProgress;
+  const { frame: frameValue, range } = useScrollEngine();
+  const frameValueRef = useRef(frameValue);
+  frameValueRef.current = frameValue;
 
   // Set below, once `render` exists. Held in a ref so the loader callback and
   // the resize observer can reach it without being re-created.
-  const renderRef = useRef<(progress: number) => void>(() => {});
+  const renderRef = useRef<(frame: number) => void>(() => { });
   const redrawRafRef = useRef(0);
 
   /**
@@ -60,7 +67,7 @@ export default function FrameCanvas({
     if (redrawRafRef.current) return;
     redrawRafRef.current = requestAnimationFrame(() => {
       redrawRafRef.current = 0;
-      renderRef.current(getProgressRef.current());
+      renderRef.current(frameValueRef.current.get());
     });
   }, []);
 
@@ -71,7 +78,7 @@ export default function FrameCanvas({
     []
   );
 
-  // Preload the sequence.
+  // Preload the range.
   useEffect(() => {
     const loader = new FrameLoader(
       (loaded, target) => {
@@ -88,16 +95,19 @@ export default function FrameCanvas({
       () => {
         dirtyRef.current = true;
         scheduleRedraw();
-      }
+      },
+      range
     );
     loaderRef.current = loader;
+    lastDrawnRef.current = -1;
+    lastFrameRef.current = range.from;
     void loader.start();
 
     return () => {
       loader.stop();
       loaderRef.current = null;
     };
-  }, [scheduleRedraw]);
+  }, [range, scheduleRedraw]);
 
   // Size the backing store to the element's real pixel size.
   useEffect(() => {
@@ -116,7 +126,7 @@ export default function FrameCanvas({
       // same task. Deferring to a rAF would let the browser composite one
       // blank frame first, which shows as a flash on every resize step.
       dirtyRef.current = true;
-      renderRef.current(getProgressRef.current());
+      renderRef.current(frameValueRef.current.get());
     };
 
     resize();
@@ -130,15 +140,15 @@ export default function FrameCanvas({
     // Reaches `render` through a ref, so this binds once and never re-observes.
   }, []);
 
-  /** progress → frame index → draw. */
-  const render = useCallback((progress: number) => {
+  /** Continuous frame position → frame index → draw. */
+  const render = useCallback((position: number) => {
     const canvas = canvasRef.current;
     const loader = loaderRef.current;
     if (!canvas || !loader) return;
 
     const frame = Math.min(
-      Math.max(Math.round(frameFromProgress(progress)), 1),
-      TOTAL_FRAMES
+      Math.max(Math.round(position), loader.from),
+      loader.to
     );
 
     // Keep the loader's decode window aimed at where the viewer is heading.
@@ -208,22 +218,23 @@ export default function FrameCanvas({
     if (loaderReadyRef.current && !revealedRef.current) {
       revealedRef.current = true;
       setRevealed(true);
-      onReadyRef.current(true);
+      onReadyRef.current?.(true);
     }
   }, []);
 
   renderRef.current = render;
 
-  // SCROLL → Lenis → rAF → progress → here. Runs inside the engine's tick, so
-  // the frame drawn belongs to the scroll position of the frame being drawn.
-  useScrollProgress(render);
+  // SCROLL → Lenis's own raf tick → frame → here, synchronously, so the frame
+  // drawn belongs to the measurement it came from.
+  useScrollFrame(render);
 
   return (
     <>
-      <canvas ref={canvasRef} className="stage__canvas" aria-hidden="true" />
+      <canvas ref={canvasRef} className={className} aria-hidden="true" />
 
-      {!revealed && (
+      {showLoader && !revealed && (
         <div className="loader" role="status" aria-live="polite">
+          <WashingMachine3D />
           <div className="loader__mark">WASH ZONE</div>
           <div className="loader__track">
             <div
@@ -232,7 +243,7 @@ export default function FrameCanvas({
             />
           </div>
           <div className="loader__text">
-            Preparing the sequence · {Math.round(loadRatio * 100)}%
+            Preparing 3D Wash Sequence · {Math.round(loadRatio * 100)}%
           </div>
         </div>
       )}

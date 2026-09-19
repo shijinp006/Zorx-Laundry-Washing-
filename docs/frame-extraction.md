@@ -4,10 +4,10 @@ The cinematic scroll on the landing page is not a `<video>` element. It is a
 `<canvas>` that draws one still image per scroll position:
 
 ```
-public/video/new video.mp4
+public/video/IMG_2305.MOV
         │
-        ▼  FFmpeg  (decode every frame, encode WebP, no resize)
-public/frames/frame-00001.webp … frame-00239.webp
+        ▼  FFmpeg  (every 2nd frame, 1280x720, watermark repair, WebP)
+public/frames/frame-00001.webp … frame-00450.webp
         │
         ▼  lib/frameLoader.ts  (fetch + decode to ImageBitmap, priority order)
         │
@@ -25,47 +25,75 @@ keyframe. Individual images trade bandwidth for instant, jitter-free access.
 
 Measured with `ffprobe` (see [Inspecting the source](#inspecting-the-source)):
 
-| Property | Value |
-|---|---|
-| Resolution | 1280×720 |
-| Frame rate | 24 fps, constant |
-| Frames | 240 (239 after the trim below) |
-| Duration | 10.0 s |
-| Codec | H.264 High, yuv420p |
-| Bitrate | 3.86 Mb/s |
+| Property | Source | Shipped sequence |
+|---|---|---|
+| Resolution | 1920×1080 | 1280×720 |
+| Frame rate | 30 fps, constant | 15 fps (every 2nd frame) |
+| Frames | 900 | 450 |
+| Duration | 30.0 s | — |
+| Codec | HEVC, yuv420p | WebP q95 |
+| Bitrate | 10.5 Mb/s | 40.0 MB total, 91 KB/frame |
+
+Frame `k` of the sequence is source frame `2k − 1`. Halve and round up when
+converting a cut list measured on the source.
+
+### Why the rate comes down
+
+900 frames at 1280×720 is 71 MB, which is not a payload a page can start
+animating inside. The frame rate is the first thing to give, not the quality:
+this film is scrubbed, one frame per scroll position, so the rate only decides
+how finely the scroll can land — nobody ever sees it play at 30 fps. Measured on
+a spread sample of this clip:
+
+| Stride | Frames | Rate | Size |
+|---|---|---|---|
+| 1 | 900 | 30 fps | 71 MB |
+| **2** | **450** | **15 fps** | **40 MB** ← default |
+| 3 | 300 | 10 fps | 28 MB |
+
+Resolution is the second lever, and it buys memory as well as bytes: the loader
+holds decoded bitmaps, and one 1280×720 frame is 3.7 MB against 8.3 MB at 1080p.
 
 These numbers are the contract. `TOTAL_FRAMES`, `FRAME_WIDTH`, `FRAME_HEIGHT`
 and `FRAME_PAD` in [`lib/story.ts`](../lib/story.ts) must agree with them, and
 the extraction never changes the resolution or the frame rate.
 
-### The first frame is not footage
+### The captions are in the picture
 
-The video opens on a **storyboard contact sheet** — a 4×3 grid of every shot
-with numbered captions — and only from frame 2 does the actual commercial
-start. It is easy to miss in a frame count but impossible to miss on screen: it
-would be the first thing a visitor sees.
+The commercial carries its own captions, composited in post: `BOOKING / Book
+Your Pickup`, `PICKUP / We Pick Up From Your Doorstep`, and six more, in the
+lower-left of the frame. **They are part of the footage and cannot be extracted
+out of it.** Measured with `scripts/detect-captions.mjs`, the block occupies
+roughly **860 × 320 px at x=40, y=725** on a 1920×1080 frame — the whole
+lower-left quadrant — and is present on about 78% of frames.
 
-`extract-frames.ps1 -TrimStart 1` (the default) drops it, so the sequence is
-**239 frames** and `frame-00001.webp` is the first real shot. It is dropped
-during extraction rather than deleted afterwards, for two reasons: the output
-stays contiguous from 1 with no gap for the loader to trip over, and re-running
-the script cannot quietly put it back.
+That rules out removing them here. The area sits over hands, a moving van, a
+machine drum and white shirts, so `delogo`, a blur or a fill would read as a
+patch parked in the corner of every shot, and cropping the band away would take
+a third of the frame height with it.
 
-That frame is also the reason the numbers moved: at 134 KB it was the largest
-file in the sequence, nearly double its neighbours, because a grid of captioned
-thumbnails is far harder to compress than a photographic frame.
+So the site does not try. `components/SceneText.tsx`, which used to draw a second
+near-identical set of captions over the canvas, has been removed, and
+[`config/scenes.ts`](../config/scenes.ts) is now a transcript of the filmed
+captions for screen readers rather than a source of overlay copy. If the film is
+ever re-cut without its caption layer, that decision is the one to revisit.
 
-Set `-TrimStart 0` for a source whose first frame is real footage. Check first:
+### Trimming a new source
+
+The current clip opens straight on the booking shot, so `-TrimStart 0` (the
+default) is correct. The previous one opened on a storyboard contact sheet and
+needed `-TrimStart 1`. Check before changing it:
 
 ```bash
-ffmpeg -i "public/video/new video.mp4" -frames:v 1 first.png
+ffmpeg -i "public/video/IMG_2305.MOV" -frames:v 1 first.png
 ```
 
-If you change the trim, `TOTAL_FRAMES` and every chapter boundary in
-[`lib/story.ts`](../lib/story.ts) and beat range in
-[`lib/beats.ts`](../lib/beats.ts) shift with it, and
-`verify-frames.ps1 -TrimStart <same value>` must be told the same number or its
-count and PSNR checks compare the wrong things.
+If you change the trim or the stride, `TOTAL_FRAMES` and every chapter boundary
+in [`lib/story.ts`](../lib/story.ts), every range in
+[`config/strips.ts`](../config/strips.ts), the step frames in
+`app/process/page.tsx` and the portal still in `app/page.tsx` all shift with it,
+and `verify-frames.ps1 -TrimStart <same value>` must be told the same number or
+its count and PSNR checks compare the wrong things.
 
 ## Running it
 
@@ -92,7 +120,7 @@ rescale or re-time the sequence.
 What the script runs, in its simplest form — straight from video to WebP:
 
 ```bash
-ffmpeg -i "public/video/new video.mp4" \
+ffmpeg -i "public/video/IMG_2305.MOV" \
   -vf trim=start_frame=1 \
   -fps_mode passthrough \
   -c:v libwebp -lossless 0 -quality 95 -compression_level 6 -preset picture \
@@ -103,28 +131,28 @@ The lossless variant — note it drops `-preset` entirely, which is not optional
 (see [below](#never-combine--preset-with--lossless-1)):
 
 ```bash
-ffmpeg -i "public/video/new video.mp4" \
+ffmpeg -i "public/video/IMG_2305.MOV" \
   -vf trim=start_frame=1 \
   -fps_mode passthrough \
   -c:v libwebp -lossless 1 -quality 100 -compression_level 6 \
   public/frames/frame-%05d.webp
 ```
 
-Drop the `-vf trim=start_frame=1` line for a source whose first frame is real
-footage. Nothing else in either command should change.
+Add `trim=start_frame=N` to the front of the chain for a source that opens on
+footage you do not want. Nothing else in either command should change.
 
 ### Every option, and why it is there
 
 | Option | Meaning |
 |---|---|
-| `-i "…mp4"` | Input. Quoted because the filename contains a space. |
+| `-i "…MOV"` | Input. |
 | `-fps_mode passthrough` | Hand every decoded frame to the encoder exactly once. This is the option that guarantees no dropped and no duplicated frames. Without it FFmpeg may resample to a target rate, which silently shifts frame↔scroll alignment. Replaces the old `-vsync 0`. |
 | `-c:v libwebp` | The WebP encoder. `-c:v webp` selects FFmpeg's built-in encoder instead, which has no lossless mode and ignores `-preset`. |
 | `-lossless 1` | Exact pixels — the decoded frame is reproduced bit for bit. With this on, `-quality` no longer means fidelity; it steers how hard the encoder searches for a smaller file. |
 | `-lossless 0 -quality 95` | Lossy mode at quality 95 of 100. See the trade-off below. |
 | `-compression_level 6` | Encoder *effort*, 0–6, not quality. 6 spends the most CPU looking for a more compact encoding of the same picture. Free file-size win, slower to run. |
 | `-preset picture` | Tunes the encoder's heuristics for detailed, non-photographic footage. Other values: `default`, `photo`, `drawing`, `icon`, `text`, `none`. **Lossy mode only — never pass it with `-lossless 1`**, see below. |
-| `-vf trim=start_frame=1` | Drops the leading storyboard frame before anything is written, so numbering stays contiguous from 1. This is the only filter in the chain, and it removes whole frames — it never touches pixels or geometry. |
+| `-vf select=…,scale=…` | Keeps every 2nd frame and resizes to 1280×720. `select` is exact decimation — the frames that survive are untouched source frames, never blended or duplicated, which is why this and not `-r`. In the real script the scale runs *after* the watermark repair, not here; see below. |
 | `frame-%05d.webp` | `%05d` is the zero-padded counter: `frame-00001.webp`. Padding keeps lexicographic order equal to numeric order, so the sequence never reorders in a file listing, a glob, a CDN listing or a build step. |
 
 `-q:v` is the same option as `-quality` for libwebp — `-q:v 100` and
@@ -183,7 +211,7 @@ continuations** — the backslash is not a PowerShell continuation character. Us
 a backtick, or put it all on one line:
 
 ```powershell
-ffmpeg -i "public/video/new video.mp4" `
+ffmpeg -i "public/video/IMG_2305.MOV" `
   -fps_mode passthrough `
   -c:v libwebp -lossless 0 -quality 95 -compression_level 6 -preset picture `
   public/frames/frame-%05d.webp
@@ -191,7 +219,7 @@ ffmpeg -i "public/video/new video.mp4" `
 
 ```cmd
 :: cmd.exe - continuation is ^, and %05d must be doubled to %%05d in a .bat file
-ffmpeg -i "public/video/new video.mp4" -fps_mode passthrough -c:v libwebp -lossless 0 -quality 95 -compression_level 6 -preset picture public/frames/frame-%%05d.webp
+ffmpeg -i "public/video/IMG_2305.MOV" -fps_mode passthrough -c:v libwebp -lossless 0 -quality 95 -compression_level 6 -preset picture public/frames/frame-%%05d.webp
 ```
 
 Typed directly at a `cmd.exe` prompt, `%05d` is correct; only inside a `.bat`
@@ -262,7 +290,7 @@ Before extracting, confirm what you are working with:
 ```bash
 ffprobe -v error -select_streams v:0 \
   -show_entries stream=width,height,r_frame_rate,avg_frame_rate,nb_frames,pix_fmt,duration,bit_rate \
-  -of default "public/video/new video.mp4"
+  -of default "public/video/IMG_2305.MOV"
 ```
 
 - `r_frame_rate` is the native rate as an exact fraction (`24/1`; NTSC footage
@@ -276,7 +304,7 @@ ffprobe -v error -select_streams v:0 \
 
 ```bash
 ffprobe -v error -select_streams v:0 -count_packets \
-  -show_entries stream=nb_read_packets -of csv=p=0 "public/video/new video.mp4"
+  -show_entries stream=nb_read_packets -of csv=p=0 "public/video/IMG_2305.MOV"
 ```
 
 ## Verifying the output
@@ -329,7 +357,7 @@ The equivalent one-liners:
 ```bash
 # Count, and compare against the source's frame count
 ls public/frames/frame-*.webp | wc -l
-ffprobe -v error -select_streams v:0 -show_entries stream=nb_frames -of csv=p=0 "public/video/new video.mp4"
+ffprobe -v error -select_streams v:0 -show_entries stream=nb_frames -of csv=p=0 "public/video/IMG_2305.MOV"
 
 # Decode every frame; silence means all of them are valid and consistently sized
 ffmpeg -v error -i public/frames/frame-%05d.webp -f null -
@@ -338,7 +366,7 @@ ffmpeg -v error -i public/frames/frame-%05d.webp -f null -
 ffprobe -v error -select_streams v:0 -show_entries stream=width,height -of csv=s=x:p=0 public/frames/frame-00001.webp
 
 # Fidelity against the source video, per frame
-ffmpeg -i "public/video/new video.mp4" -i public/frames/frame-%05d.webp \
+ffmpeg -i "public/video/IMG_2305.MOV" -i public/frames/frame-%05d.webp \
   -lavfi "[0:v]format=rgb24[a];[1:v]format=rgb24[b];[a][b]psnr=stats_file=-" -f null -
 ```
 
@@ -378,22 +406,22 @@ What makes these frames fast to scrub, beyond the encoder settings:
 Laundry Shope/
 ├── public/
 │   ├── video/
-│   │   └── new video.mp4        source, kept in the repo for re-extraction
+│   │   └── IMG_2305.MOV         source, kept in the repo for re-extraction
 │   └── frames/
 │       ├── frame-00001.webp     generated - do not hand-edit
-│       └── … frame-00239.webp
+│       └── … frame-00450.webp
 ├── scripts/
 │   ├── extract-frames.ps1       video → frames
 │   ├── verify-frames.ps1        frames → pass/fail
-│   └── remove-watermark.mjs     corner repair, runs mid-pipeline
+│   ├── remove-watermark.mjs     corner repair, runs mid-pipeline
+│   └── detect-captions.mjs      locates the burned-in caption block
 ├── lib/
 │   ├── story.ts                 TOTAL_FRAMES, FRAME_PAD, progress → frame
-│   ├── frameLoader.ts           fetch + decode to ImageBitmap
-│   └── beats.ts                 text beats keyed to frame ranges
+│   └── frameLoader.ts           fetch + decode to ImageBitmap
 ├── components/
 │   ├── FrameCanvas.tsx          the canvas that draws frames
 │   ├── ScrollEngine.tsx         scroll position → progress
-│   └── CinematicStage.tsx       composes canvas + copy layers
+│   └── CinematicStage.tsx       composes canvas, rail and cue
 ├── docs/
 │   └── frame-extraction.md      this file
 └── next.config.mjs              cache headers for /frames

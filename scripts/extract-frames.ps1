@@ -28,8 +28,34 @@
 # Requires FFmpeg on PATH:  winget install FFmpeg
 
 param(
-    [string]$InputVideo = "public/video/new video.mp4",
-    [string]$OutputDir = "public/frames",
+    [string]$InputVideo = "public/video/IMG_2305.MOV",
+    [string]$OutputDir = "public/frames/v2",
+
+    # Keep every Nth frame. This is exact decimation, not resampling: the frames
+    # that survive are untouched source frames, and nothing is blended or
+    # duplicated. Use it, never -r, to lower the rate.
+    #
+    # The source is 30fps/900 frames. At full rate the sequence is 71 MB at
+    # 1280x720, which is not a payload a page can start animating inside. A
+    # scrubbed film tolerates a lower frame rate far better than it tolerates
+    # artefacts, so the rate comes down before the quality does:
+    #
+    #   Stride 1  900 frames  30fps  71 MB
+    #   Stride 2  450 frames  15fps  35 MB   <- default
+    #   Stride 3  300 frames  10fps  24 MB
+    #
+    # Nobody sees this film at 30fps. It is scrubbed, one frame per scroll
+    # position, so the rate only decides how finely the scroll can land.
+    [ValidateRange(1, 10)]
+    [int]$Stride = 2,
+
+    # Output size. 0 keeps the source resolution.
+    #
+    # 1280x720 from a 1920x1080 source is a deliberate halving of the pixel
+    # budget: it is both the file size and, more importantly, the decoded bitmap
+    # size the loader holds in memory (3.7 MB a frame against 8.3 MB at 1080p).
+    [int]$OutWidth = 1280,
+    [int]$OutHeight = 720,
 
     # WebP quality, 0-100. Ignored when -Lossless is set.
     [ValidateRange(0, 100)]
@@ -44,16 +70,16 @@ param(
 
     # Drop this many frames from the start of the video before numbering.
     #
-    # The current source opens on a storyboard contact sheet -- a grid of all
-    # the shots with numbered captions -- which is not footage and must not
-    # appear in the scroll. Dropping it here (rather than deleting a file
-    # afterwards) keeps the output contiguous from frame 1, so re-running this
-    # script cannot quietly put it back.
+    # 0 for the current source: IMG_2305.MOV opens straight on the booking shot.
+    # The previous clip opened on a storyboard contact sheet -- a grid of all the
+    # shots with numbered captions -- and needed 1. Dropping frames here rather
+    # than deleting files afterwards keeps the output contiguous from frame 1, so
+    # re-running this script cannot quietly put them back.
     #
-    # Set to 0 for a source whose first frame is real footage. Check with:
+    # Check a new source before changing this:
     #   ffmpeg -i "<video>" -frames:v 1 first.png
     [ValidateRange(0, 10000)]
-    [int]$TrimStart = 1,
+    [int]$TrimStart = 0,
 
     # Skip the generator watermark repair and encode straight from the video.
     [switch]$SkipWatermark
@@ -101,14 +127,25 @@ if ($meta["nb_frames"] -and $meta["nb_frames"] -ne "N/A") {
 }
 
 $sourceFrames = $expected
-$expected = $sourceFrames - $TrimStart
+# select keeps frame 0 of what reaches it and every Stride-th after, so the count
+# rounds up, not down.
+$expected = [math]::Ceiling(($sourceFrames - $TrimStart) / $Stride)
+$outFps = [math]::Round($fps / $Stride, 3)
 
 $mode = if ($Lossless) { "lossless" } else { "lossy q$Quality" }
 
 Write-Host "Extracting frames" -ForegroundColor Cyan
 Write-Host "  Source:     $InputVideo"
-Write-Host "  Resolution: ${width}x${height} (preserved -- no scaling)"
-Write-Host "  Frame rate: $fps fps (native, every frame taken once)"
+if ($OutWidth -gt 0 -and $OutHeight -gt 0 -and ($OutWidth -ne $width -or $OutHeight -ne $height)) {
+    Write-Host "  Resolution: ${width}x${height} -> ${OutWidth}x${OutHeight}" -ForegroundColor Yellow
+} else {
+    Write-Host "  Resolution: ${width}x${height} (preserved -- no scaling)"
+}
+if ($Stride -gt 1) {
+    Write-Host "  Frame rate: $fps fps -> $outFps fps (every ${Stride}nd/rd frame kept, unaltered)" -ForegroundColor Yellow
+} else {
+    Write-Host "  Frame rate: $fps fps (native, every frame taken once)"
+}
 if ($TrimStart -gt 0) {
     Write-Host "  Trim:       dropping first $TrimStart frame(s) of $sourceFrames" -ForegroundColor Yellow
 }
@@ -118,14 +155,51 @@ Write-Host "  WebP mode:  $mode"
 Write-Host ("  Output:     {0}/frame-%0{1}d.webp" -f $OutputDir, $Pad)
 Write-Host ""
 
-# trim=start_frame=N drops the leading frames before anything is written, so the
-# output numbering starts at 1 with no gap. `trim` takes its bound as a single
-# named option, which avoids escaping a comma inside the filter string the way
-# select=gte(n\,N) would.
-$trimArgs = @()
-if ($TrimStart -gt 0) {
-    $trimArgs = @("-vf", "trim=start_frame=$TrimStart")
+# The one filter chain, in the order the stages have to happen:
+#
+#   trim    drops leading frames before anything is numbered, so the output is
+#           contiguous from 1. `trim` takes its bound as a named option, which
+#           avoids escaping a comma the way select=gte(n\,N) would.
+#   select  keeps every Nth of what is left. `n` counts frames entering select,
+#           so the stride is applied after the trim, not to the raw source.
+#   scale   resizes what survived. Last, so it only ever runs on kept frames.
+#
+# Paired with -fps_mode passthrough, every frame that reaches the encoder is an
+# untouched source frame written exactly once: no duplicates, no drops beyond the
+# stride, and no resampling that would shift frame-to-scroll alignment.
+#
+# The scale is deliberately NOT part of the chain that feeds the watermark
+# repair. The mark was composited onto the picture at the source resolution, and
+# the repair inverts that compositing exactly:
+#
+#     background = (observed - 255a) / (1 - a)
+#
+# Downscaling first resamples the mark's alpha against its neighbours, so the
+# per-pixel `a` the repair solves for no longer describes any single pixel and
+# the inversion leaves a faintly darkened rectangle where the mark used to be.
+# Repairing at native size and scaling afterwards keeps the model exact, and the
+# downscale then softens whatever residue is left rather than baking it in.
+$frameFilters = @()
+if ($TrimStart -gt 0) { $frameFilters += "trim=start_frame=$TrimStart" }
+if ($Stride -gt 1)    { $frameFilters += "select='not(mod(n\,$Stride))'" }
+
+$scaleFilter = @()
+if ($OutWidth -gt 0 -and $OutHeight -gt 0 -and ($OutWidth -ne $width -or $OutHeight -ne $height)) {
+    $scaleFilter = @("scale=${OutWidth}:${OutHeight}")
 }
+
+# Straight-to-WebP path does everything in one chain; there is no repair to protect.
+$directArgs = @()
+$direct = $frameFilters + $scaleFilter
+if ($direct.Count) { $directArgs = @("-vf", ($direct -join ",")) }
+
+# PNG staging path: frames only, at native size.
+$stageArgs = @()
+if ($frameFilters.Count) { $stageArgs = @("-vf", ($frameFilters -join ",")) }
+
+# …and the scale is applied on the way out of the repaired PNGs.
+$encodeArgs = @()
+if ($scaleFilter.Count) { $encodeArgs = @("-vf", ($scaleFilter -join ",")) }
 
 if (-not (Test-Path $OutputDir)) {
     New-Item -ItemType Directory -Path $OutputDir -Force | Out-Null
@@ -159,7 +233,7 @@ if ($SkipWatermark) {
     # -fps_mode passthrough keeps every decoded frame exactly once, so the
     # sequence maps 1:1 onto scroll position with no dupes and no drops.
     Write-Host "Encoding to WebP..." -ForegroundColor Cyan
-    & ffmpeg -v error -stats -i $InputVideo @trimArgs -fps_mode passthrough `
+    & ffmpeg -v error -stats -i $InputVideo @directArgs -fps_mode passthrough `
         @encode $pattern -y
     if ($LASTEXITCODE -ne 0) { Write-Error "FFmpeg failed."; exit 1 }
 } else {
@@ -173,7 +247,7 @@ if ($SkipWatermark) {
     $stagePattern = Join-Path $stageDir ("frame-%0{0}d.png" -f $Pad)
 
     Write-Host "Decoding to lossless PNG..." -ForegroundColor Cyan
-    & ffmpeg -v error -stats -i $InputVideo @trimArgs -fps_mode passthrough $stagePattern -y
+    & ffmpeg -v error -stats -i $InputVideo @stageArgs -fps_mode passthrough $stagePattern -y
     if ($LASTEXITCODE -ne 0) { Write-Error "FFmpeg failed decoding frames."; exit 1 }
 
     Write-Host "Removing the generator watermark..." -ForegroundColor Cyan
@@ -181,7 +255,7 @@ if ($SkipWatermark) {
     if ($LASTEXITCODE -ne 0) { Write-Error "Watermark removal failed."; exit 1 }
 
     Write-Host "Encoding to WebP..." -ForegroundColor Cyan
-    & ffmpeg -v error -stats -framerate $fps -i $stagePattern @encode $pattern -y
+    & ffmpeg -v error -stats -framerate $outFps -i $stagePattern @encodeArgs @encode $pattern -y
     if ($LASTEXITCODE -ne 0) { Write-Error "FFmpeg failed encoding WebP."; exit 1 }
 
     Remove-Item "$stageDir/*" -Force -ErrorAction SilentlyContinue
@@ -199,8 +273,6 @@ Write-Host "Done. $($frames.Count) frames, $sizeMb MB total, $avgKb KB average."
 if ($frames.Count -ne $expected) {
     Write-Host "WARNING: expected $expected frames, got $($frames.Count)." -ForegroundColor Red
 }
-if ($frames.Count -ne 240) {
-    Write-Host "Set TOTAL_FRAMES = $($frames.Count) in lib/story.ts." -ForegroundColor Yellow
-}
-Write-Host "FRAME_PAD in lib/story.ts must be $Pad." -ForegroundColor Yellow
+Write-Host "lib/story.ts must agree: TOTAL_FRAMES = $($frames.Count), FRAME_PAD = $Pad, FRAME_WIDTH/HEIGHT = $(if ($OutWidth -gt 0) { "$OutWidth/$OutHeight" } else { "$width/$height" })." -ForegroundColor Yellow
+Write-Host "Chapter and scene frame ranges are tied to what is on screen, so a new source invalidates them even at the same count." -ForegroundColor Yellow
 Write-Host "Verify with: .\scripts\verify-frames.ps1" -ForegroundColor Yellow

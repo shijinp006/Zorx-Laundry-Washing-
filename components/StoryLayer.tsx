@@ -1,30 +1,44 @@
-"use client";
-
 import { SCENES } from "@/config/scenes";
 
 /**
- * The flat, always-readable version of the film's narrative, for screen readers
- * and crawlers.
+ * The film, as text.
  *
- * `SceneText` draws the real copy over the canvas, but every one of its blocks
- * is `aria-hidden` and spends most of the scroll at opacity 0 — a crawler would
- * see a canvas and nothing else. This mirrors the same scene copy as ordinary
- * flowing text, in order.
+ * The homepage is five `<canvas>` elements being redrawn at scroll position. To
+ * a screen reader that is five unlabelled elements, and to a crawler it is
+ * nothing at all — the commercial's captions are pixels, not characters, so the
+ * words burned into the picture are unreadable to both.
  *
- * It reads from `config/scenes.ts` for a reason: this used to mirror the older
- * `lib/beats.ts` copy, which meant the accessible text said something different
- * from what was on screen. One source of truth avoids that drifting again.
+ * This mirrors them as flowing text, in film order, inside an `sr-only` block.
+ *
+ * It deliberately uses no headings. Each scroll chapter already contributes an
+ * `<h2>`, and an earlier version of this gave every scene one too — which put
+ * thirteen `<h2>`s in the outline, five of them describing the same stages as
+ * the chapters underneath. Heading navigation is how a screen reader user skims
+ * a page, so a transcript that doubles the outline makes the page harder to use,
+ * not easier. A definition list carries the same content and stays out of the
+ * way.
  */
 export default function StoryLayer() {
   return (
     <div className="sr-only">
       <h1>Wash Zone — premium laundry collection, cleaning and delivery</h1>
-      {SCENES.map((scene) => (
-        <section key={scene.id}>
-          <h2>{scene.headline.replace(/\n/g, " ")}</h2>
-          {scene.description ? <p>{scene.description}</p> : null}
-        </section>
-      ))}
+      <p>
+        This page tells its story with a film that plays as you scroll. The film
+        is captioned in eight stages; those captions and what each one shows are
+        transcribed below, and the same story is written out in full in the five
+        sections that follow.
+      </p>
+      <dl>
+        {SCENES.map((scene) => (
+          <div key={scene.id}>
+            <dt>
+              {scene.headline}
+              {scene.description ? ` — ${scene.description}` : ""}
+            </dt>
+            <dd>{scene.note}</dd>
+          </div>
+        ))}
+      </dl>
     </div>
   );
 }

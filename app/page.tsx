@@ -1,15 +1,19 @@
-// AOSInit is intentionally not mounted. It exists to wire up AOS for the
-// on-screen story copy, and no element carries [data-aos] now that the copy is
-// gone — mounting it would only ship AOS's stylesheet for nothing. The
-// component is kept in components/ for when the copy returns.
-import AmbientBackground from "@/components/AmbientBackground";
-import CinematicStage from "@/components/CinematicStage";
+import PageView from "@/components/PageView";
+import SinglePage from "@/components/single-page/SinglePage";
 
+/**
+ * The homepage: one continuous scroll, pinned once, from frame 1 to 389.
+ *
+ * Three captioned stops along the way — see `SECTIONS` in
+ * `config/sections.ts` for their frame ranges and copy, and
+ * `HOMEPAGE_BEATS`/`frameForHomepageProgress` for how the reel paces itself
+ * between them. Pricing and Contact are separate pages, each opening on their
+ * own short `FilmStrip` hero rather than continuing this reel.
+ */
 export default function Home() {
   return (
-    <main>
-      <AmbientBackground />
-      <CinematicStage />
-    </main>
+    <PageView>
+      <SinglePage />
+    </PageView>
   );
 }

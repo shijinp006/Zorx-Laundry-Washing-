@@ -1,19 +1,17 @@
 "use client";
 
 import { motion } from "motion/react";
+import { whatsappHref } from "@/config/site";
 
 /**
- * Floating WhatsApp contact button, pinned to the bottom-right of the stage.
+ * Floating WhatsApp contact button, fixed to the bottom-right of the viewport.
  *
- * It sits inside the pinned viewport like the navbar, so it stays put for the
- * whole cinematic scroll rather than scrolling away with the runway.
+ * It lives in the root layout, so it is the one action that is never more than a
+ * tap away — on the film, where there is no form in sight, and on the contact
+ * page, where it is the alternative to filling one in.
  */
-
-const WHATSAPP_NUMBER = "15551234567";
-const PREFILL = "Hi Wash Zone — I'd like to book a pickup.";
-
 export default function WhatsAppButton() {
-  const href = `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(PREFILL)}`;
+  const href = whatsappHref();
 
   return (
     <motion.a
@@ -25,8 +23,6 @@ export default function WhatsAppButton() {
       initial={{ scale: 0, opacity: 0 }}
       animate={{ scale: 1, opacity: 1 }}
       transition={{ delay: 0.5, type: "spring", stiffness: 260, damping: 20 }}
-      data-aos="fade-up"
-      data-aos-delay="300"
     >
       <span className="wa__label" aria-hidden="true">
         Chat with us
