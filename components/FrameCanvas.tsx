@@ -9,6 +9,20 @@ import WashingMachine3D from "@/components/ui/WashingMachine3D";
 const MAX_DPR = 2;
 
 /**
+ * Whether the film has already been revealed once in this session.
+ *
+ * Module scope, so it survives the unmount/remount a client-side navigation
+ * puts this component through. The loading card is an opening title, not a
+ * progress dialog: it earns its place while a first-time visitor waits for
+ * ~44 frames to arrive, and is pure delay on the way back from `/services`,
+ * where those frames are already in the HTTP cache and only need decoding.
+ *
+ * Without this the overlay replayed on every return to the homepage, which is
+ * what made navigating back feel slow.
+ */
+let revealedThisSession = false;
+
+/**
  * frame `ScrollValue` → Canvas.
  *
  * `ScrollStage` has already turned the scroll position into a continuous frame
@@ -49,6 +63,12 @@ export default function FrameCanvas({
   const loaderReadyRef = useRef(false);
   /** Guards the reveal so it fires once, from inside the draw. */
   const revealedRef = useRef(false);
+  /**
+   * On a return visit, reveal on the first frame that draws rather than
+   * waiting for the whole opening set — and show no card while it does.
+   * Captured once at mount so the value cannot change mid-life.
+   */
+  const returningRef = useRef(revealedThisSession);
 
   const { frame: frameValue, range } = useScrollEngine();
   const frameValueRef = useRef(frameValue);
@@ -215,8 +235,16 @@ export default function FrameCanvas({
     // Reveal only once something real is on the canvas. Handing over on the
     // loader's count alone faded a blank canvas up over a second and then
     // popped the first frame into it.
-    if (loaderReadyRef.current && !revealedRef.current) {
+    //
+    // `returningRef` is the navigation case: a frame has just been drawn, so
+    // there is something real to show, and waiting for the rest of the opening
+    // set before admitting that only delays a page whose frames are cached.
+    if (
+      (loaderReadyRef.current || returningRef.current) &&
+      !revealedRef.current
+    ) {
       revealedRef.current = true;
+      revealedThisSession = true;
       setRevealed(true);
       onReadyRef.current?.(true);
     }
@@ -232,7 +260,7 @@ export default function FrameCanvas({
     <>
       <canvas ref={canvasRef} className={className} aria-hidden="true" />
 
-      {showLoader && !revealed && (
+      {showLoader && !returningRef.current && !revealed && (
         <div className="loader" role="status" aria-live="polite">
           <WashingMachine3D />
           <div className="loader__mark">WASH ZONE</div>

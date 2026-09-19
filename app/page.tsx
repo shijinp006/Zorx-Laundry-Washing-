@@ -1,5 +1,7 @@
+import FramePreload from "@/components/FramePreload";
 import PageView from "@/components/PageView";
 import SinglePage from "@/components/single-page/SinglePage";
+import { HOMEPAGE_RANGE } from "@/config/sections";
 
 /**
  * The homepage: one continuous scroll, pinned once, from frame 1 to 389.
@@ -13,6 +15,7 @@ import SinglePage from "@/components/single-page/SinglePage";
 export default function Home() {
   return (
     <PageView>
+      <FramePreload range={HOMEPAGE_RANGE} />
       <SinglePage />
     </PageView>
   );

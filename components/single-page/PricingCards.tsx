@@ -1,6 +1,6 @@
 "use client";
 
-import { motion } from "motion/react";
+import { motion, type Variants } from "motion/react";
 
 interface PricingPlan {
   id: string;
@@ -55,7 +55,7 @@ const PLANS: PricingPlan[] = [
   },
 ];
 
-const containerVariants = {
+const containerVariants: Variants = {
   hidden: { opacity: 0 },
   visible: {
     opacity: 1,
@@ -65,7 +65,10 @@ const containerVariants = {
   },
 };
 
-const cardVariants = {
+// Annotated rather than inferred: without the `Variants` context TypeScript
+// widens the cubic bezier below to `number[]`, which is not the four-number
+// tuple Motion's `Easing` wants, and `next build` fails the type check on it.
+const cardVariants: Variants = {
   hidden: { opacity: 0, y: 50, scale: 0.94 },
   visible: {
     opacity: 1,

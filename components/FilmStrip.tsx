@@ -5,6 +5,7 @@ import { motion } from "motion/react";
 import { FrameRange } from "@/lib/frameLoader";
 import { mapRange } from "@/lib/story";
 import FrameCanvas from "./FrameCanvas";
+import FramePreload from "./FramePreload";
 import { ScrollStage, useScrollProgress } from "./ScrollEngine";
 
 /**
@@ -39,6 +40,7 @@ export default function FilmStrip({
 
   return (
     <ScrollStage className="strip" range={range}>
+      <FramePreload range={range} />
       <div className={`strip__pin${ready ? " is-ready" : ""}`}>
         <FrameCanvas
           className="strip__canvas"
